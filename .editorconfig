@@ -1,0 +1,33 @@
+# top-most EditorConfig file
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+end_of_line = lf
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.go]
+indent_size = 4
+indent_style = tab
+
+[*.py]
+indent_size = 4
+indent_style = space
+
+[*.js]
+indent_size = 2
+indent_style = space
+
+[*.ts]
+indent_size = 2
+indent_style = space
+
+[*.json]
+indent_size = 2
+indent_style = space
