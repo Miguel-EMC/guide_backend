@@ -39,3 +39,10 @@ Each framework has its own directory, which is divided into two parts:
 
 -   **[View the NestJS Guide](./NestJS_guide/guide/)**
 -   **[View the Example Project](./NestJS_guide/example_project/)**
+
+### 🐘 Laravel
+
+> A backend-focused guide to the Laravel framework, covering everything from core concepts to advanced topics like microservices and high-performance APIs.
+
+-   **[View the Laravel Guide](./Laravel_guide/guide/)**
+-   **[View the Example Project](./Laravel_guide/example_project/)**
