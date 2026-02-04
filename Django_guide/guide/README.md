@@ -1,9 +1,12 @@
-# Django Backend Guide - Table of Contents
+# Django Backend Guide - Table of Contents (2026 Edition)
 
-Welcome to the comprehensive guide to building backend APIs with Django and Django REST Framework.
+Welcome to the comprehensive guide to building backend APIs with Django 6.0.1+ and Django REST Framework 3.16+. 
+
+**⚠️ Python 3.12+ Required** - Django 6.0 introduced major breaking changes including native async support.
 
 ## Chapters
 
+0.  [Fast Setup with uv](./00-uv-setup.md) - Modern Python package management (Recommended)
 1.  [Introduction](./01-introduction.md)
 2.  [Models](./02-models.md)
 3.  [Serializers](./03-serializers.md)
@@ -29,6 +32,7 @@ Welcome to the comprehensive guide to building backend APIs with Django and Djan
 23. [Parsers and Renderers](./23-parsers-renderers.md)
 24. [API Schema Generation](./24-api-schema-generation.md)
 25. [Frontend Integration](./25-frontend-integration.md)
+26. [Django 6.0 Features](./26-django-6-features.md)
 
 ---
 _Guide created by Miguel Muzo ([@migueldev11](https://github.com/migueldev11))_

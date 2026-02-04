@@ -1,6 +1,6 @@
 # NestJS Backend Guide - Table of Contents
 
-Welcome to the comprehensive guide to building efficient and scalable backend applications with NestJS.
+Welcome to the comprehensive guide to building efficient and scalable backend applications with NestJS 11.1.12+, featuring Express v5 integration and enhanced performance.
 
 ## Chapters
 

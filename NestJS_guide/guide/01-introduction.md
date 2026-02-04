@@ -1,29 +1,52 @@
-# Introduction to NestJS
+# Introduction to NestJS 11 (2026 Edition)
 
 NestJS is a progressive Node.js framework for building efficient, reliable, and scalable server-side applications. It uses TypeScript by default and combines elements of OOP (Object Oriented Programming), FP (Functional Programming), and FRP (Functional Reactive Programming).
 
-## Why NestJS?
+**🚀 What's New in NestJS 11**: Native Express v5 support, enhanced performance, TypeScript 5.x compatibility, and improved developer experience.
 
-| Feature | Benefit |
-|---------|---------|
-| TypeScript | Type safety, better IDE support, fewer runtime errors |
-| Modular Architecture | Organized, maintainable, scalable code |
-| Dependency Injection | Loose coupling, easier testing |
-| Decorators | Clean, declarative code |
-| Built-in Support | REST, GraphQL, WebSockets, Microservices |
-| Active Community | Large ecosystem, frequent updates |
+## Why NestJS 11 in 2026?
+
+| Feature | NestJS 11 | Benefits for Modern Development |
+|---------|------------|------------------------------|
+| **Express v5 Native** | Built-in Express v5 | Better performance, modern routing |
+| **TypeScript 5.x** | Latest TypeScript | Enhanced type safety, performance |
+| **Performance Boost** | Optimized DI system | Faster startup, lower memory |
+| **Enhanced CLI** | Better DX tools | AI-assisted code generation |
+| **Microservices Ready** | Built-in support | Native distributed development |
+| **Real-time Features** | WebSockets, Event-Driven | Live collaboration, streaming |
+| **Enterprise Patterns** | CQRS, Event Sourcing | Advanced architecture support |
 
 ## Installation
 
-### Prerequisites
+## Installation
+
+### Prerequisites (2026 Requirements)
 
 ```bash
-# Check Node.js version (>= 20.0.0 required)
+# Check Node.js version (>= 22.0.0 recommended)
 node --version
+# v22.x.x or higher recommended for best performance
 
-# Check npm version
+# Check npm/yarn/pnpm version
 npm --version
+# OR yarn --version
+# OR pnpm --version
+
+# Check TypeScript version (optional, will be installed)
+npx tsc --version
+# 5.x.x recommended (NestJS 11 compatible)
 ```
+
+### What's New in NestJS 11
+
+| Feature | Description |
+|---------|-------------|
+| **Express v5 Integration** | Native Express v5 support with breaking changes |
+| **Performance Optimizations** | 15-20% faster startup time |
+| **Enhanced DI Container** | Better memory management |
+| **Improved CLI Commands** | AI-powered code generation |
+| **Modern Testing** | Updated to Jest 29+ |
+| **Better Error Handling** | More descriptive error messages |
 
 ### Install NestJS CLI
 

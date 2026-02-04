@@ -14,6 +14,7 @@ FastAPI is a modern, high-performance web framework for building APIs with Pytho
 | **Type Safety** | Leverages Python type hints for validation and documentation |
 | **Auto Documentation** | Swagger UI and ReDoc generated automatically |
 | **Async Support** | Full async/await support for concurrent requests |
+| **GenAI Ready** | Native support for AI/LLM integration and streaming responses |
 | **Standards Based** | Built on OpenAPI and JSON Schema standards |
 
 ### Why Choose FastAPI?
@@ -28,16 +29,61 @@ FastAPI is a modern, high-performance web framework for building APIs with Pytho
 
 Before starting, ensure you have:
 
-- Python 3.10+ installed
+- Python 3.9+ installed (3.10+ recommended)
 - Basic Python knowledge
 - A code editor (VS Code recommended)
 - Terminal/command line access
 
 ## Installation
 
-### Step 1: Create Virtual Environment
+### Step 1: Set Up Python Environment
 
-Always use virtual environments to avoid dependency conflicts.
+We recommend using `uv` for faster package management and better performance. `venv` is still supported as an alternative.
+
+#### Option 1: uv (Recommended for 2026)
+
+`uv` is 10-100x faster than pip and includes excellent project management.
+
+**Install uv:**
+
+```bash
+# Linux/macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Using pip (slower)
+pip install uv
+```
+
+**Create project with uv:**
+
+```bash
+# Create new FastAPI project
+uv init fastapi-project
+cd fastapi-project
+
+# Install FastAPI with uv
+uv add "fastapi[standard]"
+
+# Or create in existing directory
+uv venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate  # Windows
+uv pip install "fastapi[standard]"
+```
+
+**Benefits of uv:**
+- ⚡ 10-100x faster than pip
+- 🔄 Better dependency resolution
+- 📦 Built-in virtual environment management
+- 🔒 Lock files for reproducible builds
+- 🌐 Parallel downloads and installations
+
+#### Option 2: Traditional venv (Still Supported)
+
+Classic approach with `venv` for compatibility.
 
 **Linux / macOS:**
 
@@ -53,17 +99,35 @@ python -m venv venv
 venv\Scripts\activate
 ```
 
+#### Environment Comparison
+
+| Feature | uv (Recommended) | venv (Traditional) |
+|---------|------------------|---------------------|
+| **Speed** | 10-100x faster | Standard pip speed |
+| **Dependency Resolution** | Excellent | Basic |
+| **Lock Files** | `uv.lock` | `requirements.txt` |
+| **Project Management** | Built-in | Manual |
+| **Compatibility** | New standard | Universal |
+
 ### Step 2: Install FastAPI
 
-**Standard Installation:**
+#### With uv (Recommended)
 
 ```bash
-pip install fastapi uvicorn
+# Install FastAPI with all standard dependencies
+uv add "fastapi[standard]"
+
+# Or install additional packages
+uv add httpx pytest pytest-asyncio
 ```
 
-**Full Installation (Recommended):**
+#### With pip (Traditional)
 
 ```bash
+# Standard Installation
+pip install fastapi uvicorn
+
+# Full Installation (Recommended)
 pip install "fastapi[standard]"
 ```
 
@@ -73,7 +137,25 @@ This includes:
 - `python-multipart` - Form data support
 - Additional utilities
 
-### Step 3: Verify Installation
+#### Verify Installation
+
+**With uv:**
+
+```bash
+# Show installed packages
+uv pip list
+
+# Verify FastAPI version
+uv run python -c "import fastapi; print(f'FastAPI: {fastapi.__version__}')"
+```
+
+**With venv:**
+
+```bash
+python check_install.py
+```
+
+### Step 3: Create Verification Script
 
 Create `check_install.py`:
 
@@ -85,21 +167,79 @@ import pydantic
 print(f"FastAPI version: {fastapi.__version__}")
 print(f"Uvicorn version: {uvicorn.__version__}")
 print(f"Pydantic version: {pydantic.__version__}")
+
+# Check installation method
+import sys
+import os
+
+if os.path.exists('uv.lock'):
+    print("Installation method: uv (recommended)")
+    print("✅ Using modern fast package manager")
+elif os.path.exists('venv'):
+    print("Installation method: venv (traditional)")
+    print("ℹ️  Consider migrating to uv for better performance")
+else:
+    print("Installation method: unknown")
+    print("⚠️  Consider using uv for optimal experience")
+
+print(f"Python version: {sys.version}")
 ```
 
-Run:
+**Run with uv:**
+
+```bash
+uv run python check_install.py
+```
+
+**Run with venv:**
 
 ```bash
 python check_install.py
 ```
 
-Expected output:
+Expected output (2026):
 
 ```
-FastAPI version: 0.100.x
-Uvicorn version: 0.23.x
-Pydantic version: 2.x.x
+FastAPI version: 0.128.0
+Uvicorn version: 0.32.x
+Pydantic version: 2.10.x
+Installation method: uv (recommended)
+✅ Using modern fast package manager
+Python version: 3.11.x
 ```
+
+## Running Your Development Server
+
+### With uv (Recommended)
+
+```bash
+# Run with uv (faster startup)
+uv run uvicorn main:app --reload
+
+# Or if using uv venv
+uvicorn main:app --reload
+
+# With custom settings
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### With Traditional Setup
+
+```bash
+# Run with traditional venv
+uvicorn main:app --reload
+
+# With custom settings
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### uv Performance Benefits
+
+Using `uv run` provides:
+- 🚀 **Faster startup** - 2-3x quicker cold starts
+- 💾 **Memory efficiency** - Better memory management
+- 🔒 **Dependency isolation** - Cleaner dependency resolution
+- 📊 **Performance monitoring** - Built-in performance stats
 
 ## Your First Application
 
@@ -276,10 +416,32 @@ pip install "fastapi[standard]"
 
 ### Type Hints Not Working
 
-Ensure Python 3.10+ or use:
+Ensure Python 3.9+ or use:
 
 ```python
 from typing import Optional, List, Union
+```
+
+### Pydantic v2 Migration Issues
+
+FastAPI 0.128.0 dropped Pydantic v1 support completely. Common issues:
+
+```python
+# Old Pydantic v1 (NO LONGER SUPPORTED)
+from pydantic import BaseModel
+
+# New Pydantic v2 (REQUIRED)
+from pydantic import BaseModel, Field
+
+class Item(BaseModel):
+    name: str = Field(..., description="Item name")
+    price: float = Field(gt=0, description="Price must be positive")
+```
+
+**Key Changes:**
+- `Config` class → `model_config`
+- `@validator` → `@field_validator`
+- `dict()` method → `model_dump()`
 ```
 
 ## Summary
@@ -293,10 +455,47 @@ You learned:
 - Working with request bodies (Pydantic models)
 - Accessing automatic documentation
 
+## FastAPI for GenAI in 2026
+
+FastAPI has become the backbone of modern AI applications. Key advantages for GenAI:
+
+### Streaming Responses
+```python
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+import asyncio
+
+app = FastAPI()
+
+async def generate_stream():
+    for i in range(10):
+        yield f"data: {i}\n\n"
+        await asyncio.sleep(0.1)
+
+@app.get("/stream")
+async def stream_llm_response():
+    return StreamingResponse(generate_stream(), media_type="text/plain")
+```
+
+### AI SDK Integration
+FastAPI seamlessly integrates with major AI platforms:
+- OpenAI SDK
+- Anthropic Claude
+- Hugging Face Transformers
+- LangChain
+- Local LLMs (Ollama, Llama.cpp)
+
+### Async-First Architecture
+Perfect for I/O-heavy AI workloads:
+- Multiple concurrent LLM calls
+- Vector database queries
+- Background processing for embeddings
+
 ## Next Steps
 
 - [Routing & Endpoints](./02-routing.md) - Learn about HTTP methods and parameters
 - [Data Validation](./03-data-validation.md) - Master Pydantic validation
+- [GenAI Integration](./genai-integration.md) - Build AI-powered APIs *(Coming Soon)*
 
 ---
 

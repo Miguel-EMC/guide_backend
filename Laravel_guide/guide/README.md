@@ -1,6 +1,6 @@
-# Laravel Backend Guide - Table of Contents
+# Laravel Backend Guide - Table of Contents (2026 Edition)
 
-Welcome to the comprehensive guide to building backend APIs with Laravel.
+Welcome to the comprehensive guide to building backend APIs with Laravel 12.x and preparing for Laravel 13 (Q1 2026).
 
 ## Chapters
 
