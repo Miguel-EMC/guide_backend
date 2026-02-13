@@ -1,25 +1,54 @@
 # 14 - Spring for GraphQL
 
-Spring for GraphQL is a framework that provides support for GraphQL. It is built on top of GraphQL Java and provides a secure and extensible way to build your own GraphQL APIs.
+Spring for GraphQL provides GraphQL server support on top of GraphQL Java. The latest release is 2.0.2.
 
-To use Spring for GraphQL, you will need to add the `spring-boot-starter-graphql` dependency to your project.
+## When to Use
+- You need flexible query shapes for clients
+- You want a single endpoint with typed schema and resolvers
+- You need subscriptions for real-time updates
 
-Once you have added the dependency, you can create a GraphQL controller by using the `@Controller` annotation and the `@QueryMapping`, `@MutationMapping`, and `@SubscriptionMapping` annotations.
+## Dependencies
+### Maven
+```xml
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-graphql</artifactId>
+</dependency>
+```
 
-Here is an example of a simple GraphQL controller:
+### Gradle
+```gradle
+implementation "org.springframework.boot:spring-boot-starter-graphql"
+```
 
+## Schema (resources/graphql/schema.graphqls)
+```graphql
+type Query {
+  bookById(id: ID!): Book
+}
+
+type Book {
+  id: ID!
+  title: String!
+  author: String!
+}
+```
+
+## Controller Example
 ```java
 @Controller
-public class MyController {
+public class BookController {
 
     @QueryMapping
-    public MyEntity myEntity(@Argument Long id) {
-        // ...
-    }
-
-    @MutationMapping
-    public MyEntity createMyEntity(@Argument MyEntityInput input) {
-        // ...
+    public Book bookById(@Argument String id) {
+        return new Book(id, "Spring in Action", "Walls");
     }
 }
 ```
+
+## Testing
+- Use `@GraphQlTest` for slice tests.
+
+## References
+- [Spring for GraphQL project page](https://spring.io/projects/spring-graphql)
+- [Spring for GraphQL reference](https://docs.spring.io/spring-graphql/reference/)

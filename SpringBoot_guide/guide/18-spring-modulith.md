@@ -1,16 +1,58 @@
 # 18 - Spring Modulith
 
-Spring Modulith is an experimental Spring project that helps you structure your Spring Boot application in a modular way. It allows you to create a well-structured monolith that can be easily evolved into a microservices-based architecture if needed.
+Spring Modulith helps you build modular monoliths by enforcing module boundaries, providing verification, observability, and documentation support. The latest stable version is 2.0.2.
 
-To use Spring Modulith, you will need to add the `spring-modulith-starter-test` dependency to your project.
+## When to Use
+- You want a modular monolith with clear boundaries
+- You need architectural verification and module-level tests
+- You plan to evolve toward distributed services later
 
-Once you have added the dependency, you can create a module by creating a package and adding a `package-info.java` file to it.
+## Dependency Management
+Use the Spring Modulith BOM to keep module versions aligned.
 
-Here is an example of a `package-info.java` file:
+### Maven
+```xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-bom</artifactId>
+      <version>2.0.2</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+```
+
+### Gradle
+```gradle
+implementation platform("org.springframework.modulith:spring-modulith-bom:2.0.2")
+```
+
+## Starters
+Choose starters based on your persistence stack:
+- `spring-modulith-starter-core`
+- `spring-modulith-starter-jpa`
+- `spring-modulith-starter-jdbc`
+- `spring-modulith-starter-mongodb`
+- `spring-modulith-starter-neo4j`
+- `spring-modulith-starter-insight`
+- `spring-modulith-starter-test`
+
+## Defining Modules
+Organize modules as direct sub-packages of your application base package. Optional `@ApplicationModule` metadata can define allowed dependencies.
 
 ```java
 @org.springframework.modulith.ApplicationModule(
-    allowedDependencies = { "base" }
+    allowedDependencies = { "shared" }
 )
-package com.example.myproject.mymodule;
+package com.example.shop.orders;
 ```
+
+## Verification and Documentation
+Spring Modulith can verify module boundaries, generate documentation snippets, and provide runtime insights through observability components.
+
+## References
+- [Spring Modulith project page](https://spring.io/projects/spring-modulith)
+- [Spring Modulith reference](https://docs.spring.io/spring-modulith/reference/)

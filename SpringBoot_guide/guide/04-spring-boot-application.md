@@ -1,19 +1,48 @@
 # 04 - The @SpringBootApplication Annotation
 
-The `@SpringBootApplication` annotation is a convenience annotation that adds all of the following:
+`@SpringBootApplication` is a convenience annotation that combines:
+- `@SpringBootConfiguration`
+- `@EnableAutoConfiguration`
+- `@ComponentScan`
 
-*   **`@Configuration`:** Tags the class as a source of bean definitions for the application context.
-*   **`@EnableAutoConfiguration`:** Tells Spring Boot to start adding beans based on classpath settings, other beans, and various property settings.
-*   **`@ComponentScan`:** Tells Spring to look for other components, configurations, and services in the specified package, allowing it to find and register the beans.
-
-Here is an example of a Spring Boot application:
-
+## Minimal Application
 ```java
 @SpringBootApplication
-public class MyApplication {
+public class Application {
 
     public static void main(String[] args) {
-        SpringApplication.run(MyApplication.class, args);
+        SpringApplication.run(Application.class, args);
     }
 }
 ```
+
+## Customizing Startup
+```java
+@SpringBootApplication
+public class Application {
+
+    public static void main(String[] args) {
+        new SpringApplicationBuilder(Application.class)
+            .profiles("prod")
+            .logStartupInfo(true)
+            .run(args);
+    }
+}
+```
+
+## Command-Line Runners
+```java
+@Component
+public class SeedDataRunner implements ApplicationRunner {
+    @Override
+    public void run(ApplicationArguments args) {
+        // seed data on startup
+    }
+}
+```
+
+## Configuration Properties
+Use `@ConfigurationProperties` and `@ConfigurationPropertiesScan` to bind configuration into typed objects.
+
+## References
+- [Spring Boot reference](https://docs.spring.io/spring-boot/reference/)

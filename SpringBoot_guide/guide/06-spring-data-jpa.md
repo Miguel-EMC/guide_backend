@@ -1,19 +1,83 @@
 # 06 - Spring Data JPA
 
-Spring Data JPA is a sub-project of Spring Data that makes it easy to implement JPA-based repositories. It provides a set of interfaces and classes that allow you to easily interact with your database.
+Spring Data JPA simplifies relational persistence by providing repository abstractions on top of JPA. The latest release is 4.0.2.
 
-To use Spring Data JPA, you will need to add the `spring-boot-starter-data-jpa` dependency to your project.
+## When to Use
+- You have a relational database and want ORM mapping
+- You want derived queries, pagination, and auditing
+- You need transactions and a mature persistence ecosystem
 
-Here is an example of a Spring Data JPA repository:
+## Dependencies
+### Maven
+```xml
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-data-jpa</artifactId>
+</dependency>
+```
 
+### Gradle
+```gradle
+implementation "org.springframework.boot:spring-boot-starter-data-jpa"
+```
+
+## Configuration
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/app
+    username: app
+    password: secret
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+```
+
+## Repository Example
 ```java
-@Repository
-public interface MyRepository extends JpaRepository<MyEntity, Long> {
-
-    List<MyEntity> findByStatus(String status);
+@Entity
+public class Customer {
+    @Id
+    private Long id;
+    private String firstName;
+    private String lastName;
 }
 ```
 
-In this example, we have created a repository for the `MyEntity` entity. We have extended the `JpaRepository` interface, which provides us with a number of methods for interacting with the database, such as `save()`, `findAll()`, and `findById()`.
+```java
+public interface CustomerRepository extends JpaRepository<Customer, Long> {
+    List<Customer> findByLastName(String lastName);
+}
+```
 
-We have also defined a custom method, `findByStatus()`, which will allow us to find all of the entities that have a certain status.
+## Auditing
+```java
+@Configuration
+@EnableJpaAuditing
+class JpaConfig {
+}
+```
+
+```java
+@Entity
+@EntityListeners(AuditingEntityListener.class)
+public class Order {
+    @Id
+    private Long id;
+
+    @CreatedDate
+    private Instant createdAt;
+
+    @LastModifiedDate
+    private Instant updatedAt;
+}
+```
+
+## Testing
+- Use `@DataJpaTest` for repository-focused tests.
+- Use `spring.test.database.replace=none` to keep a real database (often with Testcontainers).
+
+## References
+- [Spring Data JPA project page](https://spring.io/projects/spring-data-jpa)
+- [Spring Data JPA reference](https://docs.spring.io/spring-data/jpa/reference/)

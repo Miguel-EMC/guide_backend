@@ -1,23 +1,61 @@
 # 30 - Spring Web Services
 
-Spring Web Services is a product of the Spring community focused on creating document-driven Web services. It provides a contract-first approach to developing SOAP-based web services.
+Spring Web Services (Spring-WS) is focused on contract-first SOAP services and XML message handling. The current 4.1.x line is the latest.
 
-To use Spring Web Services, you will need to add the `spring-boot-starter-web-services` dependency to your project.
+## When to Use
+- You need SOAP-based services
+- You have WSDL-first contracts
+- You require XML schema validation
 
-Once you have added the dependency, you can create a web service endpoint by creating a class and annotating it with `@Endpoint`.
+## Dependencies
+### Maven
+```xml
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-web-services</artifactId>
+</dependency>
+```
 
-Here is an example of a simple web service endpoint:
+### Gradle
+```gradle
+implementation "org.springframework.boot:spring-boot-starter-web-services"
+```
 
+## Endpoint Example
 ```java
 @Endpoint
-public class MyEndpoint {
+public class OrdersEndpoint {
 
-    private static final String NAMESPACE_URI = "http://my-namespace.com";
+    private static final String NAMESPACE_URI = "http://example.com/orders";
 
-    @PayloadRoot(namespace = NAMESPACE_URI, localPart = "myRequest")
+    @PayloadRoot(namespace = NAMESPACE_URI, localPart = "GetOrderRequest")
     @ResponsePayload
-    public MyResponse myMethod(@RequestPayload MyRequest request) {
-        // ...
+    public GetOrderResponse getOrder(@RequestPayload GetOrderRequest request) {
+        return new GetOrderResponse();
     }
 }
 ```
+
+## WSDL Registration (Example)
+```java
+@Configuration
+@EnableWs
+public class WsConfig {
+
+    @Bean
+    public ServletRegistrationBean<MessageDispatcherServlet> messageDispatcherServlet(
+            ApplicationContext applicationContext) {
+        MessageDispatcherServlet servlet = new MessageDispatcherServlet();
+        servlet.setApplicationContext(applicationContext);
+        servlet.setTransformWsdlLocations(true);
+        return new ServletRegistrationBean<>(servlet, "/ws/*");
+    }
+}
+```
+
+## Testing
+Use `MockWebServiceClient` for endpoint tests.
+
+## References
+- [Spring Web Services project page](https://spring.io/projects/spring-ws)
+- [Spring Web Services reference](https://docs.spring.io/spring-ws/docs/4.1.1/reference/html/)

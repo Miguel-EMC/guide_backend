@@ -1,24 +1,48 @@
 # 16 - Spring Integration
 
-Spring Integration is a framework that provides an extension of the Spring programming model to support the well-known Enterprise Integration Patterns. It enables lightweight messaging within Spring-based applications and supports integration with external systems via declarative adapters.
+Spring Integration extends the Spring programming model to support Enterprise Integration Patterns (EIP). The latest release is 7.0.2.
 
-To use Spring Integration, you will need to add the `spring-boot-starter-integration` dependency to your project.
+## When to Use
+- You need message-driven integrations between systems
+- You want to model flows with channels, transformers, and adapters
+- You need reliable polling and routing
 
-Once you have added the dependency, you can create an integration flow by creating a `IntegrationFlow` bean.
+## Dependencies
+### Maven
+```xml
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-integration</artifactId>
+</dependency>
+```
 
-Here is an example of a simple integration flow that reads a file from the file system, transforms it, and then writes it to another file:
+### Gradle
+```gradle
+implementation "org.springframework.boot:spring-boot-starter-integration"
+```
 
+## Integration Flow Example
 ```java
 @Configuration
 public class IntegrationConfig {
 
     @Bean
-    public IntegrationFlow fileIntegrationFlow() {
-        return IntegrationFlows.from(new FileInboundChannelAdapter(new File("/tmp/input")), e -> e.poller(Pollers.fixedDelay(1000)))
-                .transform(new FileToStringTransformer())
-                .transform(String.class, String::toUpperCase)
-                .handle(new FileWritingMessageHandler(new File("/tmp/output")))
-                .get();
+    public IntegrationFlow fileToLogFlow() {
+        return IntegrationFlows
+            .from(Files.inboundAdapter(new File("input"))
+                .autoCreateDirectory(true),
+                e -> e.poller(Pollers.fixedDelay(1000)))
+            .transform(Files.toStringTransformer())
+            .handle(m -> System.out.println(m.getPayload()))
+            .get();
     }
 }
 ```
+
+## Notes
+- Prefer `IntegrationFlows` for readable DSL-style configuration.
+- Use message channels to decouple producers and consumers.
+
+## References
+- [Spring Integration project page](https://spring.io/projects/spring-integration)
+- [Spring Integration reference](https://docs.spring.io/spring-integration/reference/)

@@ -1,27 +1,66 @@
 # 23 - Spring for Apache Kafka
 
-Spring for Apache Kafka is a project that applies core Spring concepts to the development of Kafka-based messaging solutions. It provides a "template" as a high-level abstraction for sending and receiving messages.
+Spring for Apache Kafka provides messaging abstractions for Kafka. The latest release is 3.3.2.
 
-To use Spring for Apache Kafka, you will need to add the `spring-kafka` dependency to your project.
+## When to Use
+- Event streaming and pub/sub
+- High-throughput messaging
+- Integration with Kafka consumer groups
 
-Once you have added the dependency, you can inject a `KafkaTemplate` bean into your application and use it to send and receive messages.
+## Dependencies
+### Maven
+```xml
+<dependency>
+  <groupId>org.springframework.kafka</groupId>
+  <artifactId>spring-kafka</artifactId>
+</dependency>
+```
 
-Here is an example of how to use Spring for Apache Kafka to send a message to a Kafka topic:
+### Gradle
+```gradle
+implementation "org.springframework.kafka:spring-kafka"
+```
 
+Spring Boot users typically prefer:
+```gradle
+implementation "org.springframework.boot:spring-boot-starter-kafka"
+```
+
+## Configuration
+```yaml
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+```
+
+## Producing Messages
 ```java
-@RestController
-public class MyController {
-
+@Service
+public class EventPublisher {
     private final KafkaTemplate<String, String> kafkaTemplate;
 
-    @Autowired
-    public MyController(KafkaTemplate<String, String> kafkaTemplate) {
+    public EventPublisher(KafkaTemplate<String, String> kafkaTemplate) {
         this.kafkaTemplate = kafkaTemplate;
     }
 
-    @PostMapping("/messages")
-    public void sendMessage(@RequestBody String message) {
-        this.kafkaTemplate.send("my-topic", message);
+    public void publish(String topic, String payload) {
+        kafkaTemplate.send(topic, payload);
     }
 }
 ```
+
+## Consuming Messages
+```java
+@Service
+public class EventConsumer {
+
+    @KafkaListener(topics = "events", groupId = "orders")
+    public void onMessage(String payload) {
+        // handle payload
+    }
+}
+```
+
+## References
+- [Spring for Apache Kafka project page](https://spring.io/projects/spring-kafka)
+- [Spring for Apache Kafka reference](https://docs.spring.io/spring-kafka/reference/)

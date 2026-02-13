@@ -1,27 +1,62 @@
 # 25 - Spring for Apache Pulsar
 
-Spring for Apache Pulsar is a project that applies core Spring concepts to the development of Pulsar-based messaging solutions. It provides a "template" as a high-level abstraction for sending and receiving messages.
+Spring for Apache Pulsar provides messaging abstractions for Apache Pulsar. The latest release is 1.2.3.
 
-To use Spring for Apache Pulsar, you will need to add the `spring-pulsar-spring-boot-starter` dependency to your project.
+## When to Use
+- Event streaming with Pulsar topics
+- Multi-tenant messaging
+- Pulsar schema support and message routing
 
-Once you have added the dependency, you can inject a `PulsarTemplate` bean into your application and use it to send and receive messages.
+## Dependencies
+### Maven
+```xml
+<dependency>
+  <groupId>org.springframework.pulsar</groupId>
+  <artifactId>spring-pulsar-spring-boot-starter</artifactId>
+</dependency>
+```
 
-Here is an example of how to use Spring for Apache Pulsar to send a message to a Pulsar topic:
+### Gradle
+```gradle
+implementation "org.springframework.pulsar:spring-pulsar-spring-boot-starter"
+```
 
+## Configuration
+```yaml
+spring:
+  pulsar:
+    client:
+      service-url: pulsar://localhost:6650
+```
+
+## Producing Messages
 ```java
-@RestController
-public class MyController {
-
+@Service
+public class PulsarPublisher {
     private final PulsarTemplate<String> pulsarTemplate;
 
-    @Autowired
-    public MyController(PulsarTemplate<String> pulsarTemplate) {
+    public PulsarPublisher(PulsarTemplate<String> pulsarTemplate) {
         this.pulsarTemplate = pulsarTemplate;
     }
 
-    @PostMapping("/messages")
-    public void sendMessage(@RequestBody String message) {
-        this.pulsarTemplate.send("my-topic", message);
+    public void publish(String topic, String payload) {
+        pulsarTemplate.send(topic, payload);
     }
 }
 ```
+
+## Consuming Messages
+```java
+@Service
+public class PulsarConsumer {
+
+    @PulsarListener(topics = "orders")
+    public void onMessage(String payload) {
+        // handle payload
+    }
+}
+```
+
+## References
+- [Spring for Apache Pulsar project page](https://spring.io/projects/spring-pulsar)
+- [Spring for Apache Pulsar reference](https://docs.spring.io/spring-pulsar/reference/)

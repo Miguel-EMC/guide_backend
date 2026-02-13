@@ -1,26 +1,59 @@
 # 03 - Dependency Injection and IoC
 
-**Dependency Injection (DI)** is a design pattern that is used to implement IoC. It is a process whereby objects are given their dependencies at creation time by an external entity that is responsible for coordinating each object in the system.
+Dependency Injection (DI) is how Spring implements Inversion of Control (IoC). Instead of creating dependencies manually, the container supplies them.
 
-In the Spring Framework, the IoC container is responsible for injecting the dependencies of your beans. You can provide the dependencies of your beans in the following ways:
+## Injection Styles
+- **Constructor injection** (recommended)
+- **Setter injection** (optional dependencies)
+- **Field injection** (discouraged for testability)
 
-*   **Constructor-based dependency injection:** The container injects the dependencies of your beans through the constructor of your class.
-*   **Setter-based dependency injection:** The container injects the dependencies of your beans through the setter methods of your class.
-*   **Field-based dependency injection:** The container injects the dependencies of your beans directly into the fields of your class.
-
-Here is an example of constructor-based dependency injection:
-
+## Constructor Injection Example
 ```java
-@Component
-public class MyService {
+@Service
+public class OrderService {
 
-    private final MyRepository repository;
+    private final OrderRepository repository;
 
-    @Autowired
-    public MyService(MyRepository repository) {
+    public OrderService(OrderRepository repository) {
         this.repository = repository;
     }
-
-    // ...
 }
 ```
+
+## Qualifiers and Primary Beans
+```java
+@Service
+@Primary
+public class PrimaryNotifier implements Notifier {
+}
+
+@Service
+@Qualifier("sms")
+public class SmsNotifier implements Notifier {
+}
+```
+
+```java
+public class AlertService {
+    private final Notifier notifier;
+
+    public AlertService(@Qualifier("sms") Notifier notifier) {
+        this.notifier = notifier;
+    }
+}
+```
+
+## Profiles
+```java
+@Configuration
+@Profile("dev")
+class DevOnlyConfig {
+}
+```
+
+## Notes
+- Prefer constructor injection for immutability and testability.
+- Use `ObjectProvider<T>` for optional or lazy dependencies.
+
+## References
+- [Spring Framework reference](https://docs.spring.io/spring-framework/reference/)

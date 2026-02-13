@@ -1,35 +1,55 @@
 # 21 - Spring Batch
 
-Spring Batch is a lightweight, comprehensive batch framework designed to enable the development of robust batch applications vital for the daily operations of enterprise systems.
+Spring Batch is a framework for building robust batch processing jobs. The latest release is 5.1.2.
 
-To use Spring Batch, you will need to add the `spring-boot-starter-batch` dependency to your project.
+## When to Use
+- Large-scale data processing or ETL jobs
+- Scheduled or on-demand batch pipelines
+- Retryable, restartable steps with checkpoints
 
-Once you have added the dependency, you can create a batch job by creating a `Job` bean.
+## Dependencies
+### Maven
+```xml
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-batch</artifactId>
+</dependency>
+```
 
-Here is an example of a simple batch job that reads a CSV file, processes the data, and then writes it to a database:
+### Gradle
+```gradle
+implementation "org.springframework.boot:spring-boot-starter-batch"
+```
 
+## Job Example
 ```java
 @Configuration
 @EnableBatchProcessing
 public class BatchConfig {
 
     @Bean
-    public Job myJob(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
-        return new JobBuilder("myJob", jobRepository)
-                .start(myStep(jobRepository, transactionManager))
-                .build();
+    public Job importJob(JobRepository jobRepository, Step importStep) {
+        return new JobBuilder("importJob", jobRepository)
+            .start(importStep)
+            .build();
     }
 
     @Bean
-    public Step myStep(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
-        return new StepBuilder("myStep", jobRepository)
-                .<MyData, MyData>chunk(10, transactionManager)
-                .reader(myReader())
-                .processor(myProcessor())
-                .writer(myWriter())
-                .build();
+    public Step importStep(JobRepository jobRepository, PlatformTransactionManager txManager) {
+        return new StepBuilder("importStep", jobRepository)
+            .<Customer, Customer>chunk(100, txManager)
+            .reader(reader())
+            .processor(processor())
+            .writer(writer())
+            .build();
     }
-
-    // ...
 }
 ```
+
+## Configuration Notes
+- Ensure a database is available for the batch metadata tables.
+- Use `spring.batch.jdbc.initialize-schema=always` for local development.
+
+## References
+- [Spring Batch project page](https://spring.io/projects/spring-batch)
+- [Spring Batch reference](https://docs.spring.io/spring-batch/reference/)

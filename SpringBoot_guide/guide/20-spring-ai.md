@@ -1,27 +1,59 @@
 # 20 - Spring AI
 
-Spring AI is an artificial intelligence framework for Spring applications. It provides a set of APIs and implementations for interacting with AI models from various providers, such as OpenAI and Hugging Face.
+Spring AI provides a unified abstraction for chat, embeddings, and AI tooling in Spring applications. The latest release is 1.0.3.
 
-To use Spring AI, you will need to add the `spring-ai-boot-starter` dependency to your project, along with a dependency for the AI model that you want to use (e.g., `spring-ai-openai-starter`).
+## When to Use
+- You want a consistent API across AI providers
+- You need chat, embeddings, and vector store integration
+- You want Spring Boot auto-configuration for AI clients
 
-Once you have added the dependencies, you can inject an `AiClient` bean into your application and use it to interact with the AI model.
+## Dependencies
+### Maven (OpenAI example)
+```xml
+<dependency>
+  <groupId>org.springframework.ai</groupId>
+  <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
+</dependency>
+```
 
-Here is an example of how to use Spring AI to generate a response from an AI model:
+### Gradle
+```gradle
+implementation "org.springframework.ai:spring-ai-openai-spring-boot-starter"
+```
 
+## Configuration
+```yaml
+spring:
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+```
+
+## Chat Example
 ```java
 @RestController
-public class MyController {
+public class AiController {
 
-    private final AiClient aiClient;
+    private final ChatClient chatClient;
 
-    @Autowired
-    public MyController(AiClient aiClient) {
-        this.aiClient = aiClient;
+    public AiController(ChatClient.Builder builder) {
+        this.chatClient = builder.build();
     }
 
     @GetMapping("/ai")
-    public String ai(@RequestParam String message) {
-        return this.aiClient.generate(message);
+    public String chat(@RequestParam String message) {
+        return chatClient.prompt()
+            .user(message)
+            .call()
+            .content();
     }
 }
 ```
+
+## Notes
+- Use provider-specific starters for OpenAI, Anthropic, Azure OpenAI, and others.
+- Configure timeouts and retries for production workloads.
+
+## References
+- [Spring AI project page](https://spring.io/projects/spring-ai)
+- [Spring AI reference](https://docs.spring.io/spring-ai/reference/)

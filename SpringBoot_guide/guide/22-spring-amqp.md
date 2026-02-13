@@ -1,27 +1,64 @@
 # 22 - Spring AMQP
 
-Spring AMQP is a project that applies core Spring concepts to the development of AMQP-based messaging solutions. It provides a "template" as a high-level abstraction for sending and receiving messages.
+Spring AMQP provides messaging abstractions for AMQP brokers such as RabbitMQ. The latest release is 4.0.1.
 
-To use Spring AMQP, you will need to add the `spring-boot-starter-amqp` dependency to your project.
+## When to Use
+- Asynchronous messaging with RabbitMQ
+- Event-driven architectures
+- Task queues and pub/sub
 
-Once you have added the dependency, you can inject a `RabbitTemplate` bean into your application and use it to send and receive messages.
+## Dependencies
+### Maven
+```xml
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-amqp</artifactId>
+</dependency>
+```
 
-Here is an example of how to use Spring AMQP to send a message to a RabbitMQ queue:
+### Gradle
+```gradle
+implementation "org.springframework.boot:spring-boot-starter-amqp"
+```
 
+## Configuration
+```yaml
+spring:
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+```
+
+## Sending Messages
 ```java
-@RestController
-public class MyController {
-
+@Service
+public class OrderPublisher {
     private final RabbitTemplate rabbitTemplate;
 
-    @Autowired
-    public MyController(RabbitTemplate rabbitTemplate) {
+    public OrderPublisher(RabbitTemplate rabbitTemplate) {
         this.rabbitTemplate = rabbitTemplate;
     }
 
-    @PostMapping("/messages")
-    public void sendMessage(@RequestBody String message) {
-        this.rabbitTemplate.convertAndSend("my-queue", message);
+    public void publish(String queue, String payload) {
+        rabbitTemplate.convertAndSend(queue, payload);
     }
 }
 ```
+
+## Listening for Messages
+```java
+@Service
+public class OrderConsumer {
+
+    @RabbitListener(queues = "orders")
+    public void onMessage(String payload) {
+        // handle payload
+    }
+}
+```
+
+## References
+- [Spring AMQP project page](https://spring.io/projects/spring-amqp)
+- [Spring AMQP reference](https://docs.spring.io/spring-amqp/reference/)

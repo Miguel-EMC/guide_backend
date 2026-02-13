@@ -1,20 +1,42 @@
 # 26 - Spring Shell
 
-Spring Shell is a project that allows you to create a shell (or command line) application with Spring. It provides a simple and extensible way to build your own custom commands.
+Spring Shell lets you build interactive CLI applications using Spring. The latest release is 3.4.1.
 
-To use Spring Shell, you will need to add the `spring-shell-starter` dependency to your project.
+## When to Use
+- You need a CLI tool for internal automation
+- You want interactive commands with options and help
+- You need a Spring-powered command line UX
 
-Once you have added the dependency, you can create a command by creating a class and annotating it with `@ShellComponent` and `@ShellMethod`.
+## Dependencies
+### Maven
+```xml
+<dependency>
+  <groupId>org.springframework.shell</groupId>
+  <artifactId>spring-shell-starter</artifactId>
+</dependency>
+```
 
-Here is an example of a simple command that prints a greeting:
+### Gradle
+```gradle
+implementation "org.springframework.shell:spring-shell-starter"
+```
 
+## Command Example
 ```java
 @ShellComponent
-public class MyCommands {
+public class UserCommands {
 
-    @ShellMethod("Prints a greeting.")
-    public String hello(@ShellOption(defaultValue = "World") String name) {
-        return "Hello, " + name + "!";
+    @ShellMethod("Creates a user.")
+    public String createUser(@ShellOption String name) {
+        return "Created " + name;
     }
 }
 ```
+
+## Notes
+- Commands are auto-discovered via `@ShellComponent`.
+- Use `@ShellOption` for defaults, validation, and help text.
+
+## References
+- [Spring Shell project page](https://spring.io/projects/spring-shell)
+- [Spring Shell reference](https://docs.spring.io/spring-shell/reference/)

@@ -1,7 +1,55 @@
 # 31 - Spring Cloud
 
-Spring Cloud is a project that provides tools for developers to quickly build some of the common patterns in distributed systems (e.g. configuration management, service discovery, circuit breakers, intelligent routing, micro-proxy, control bus, one-time tokens, global locks, leadership election, distributed sessions, cluster state).
+Spring Cloud provides tools to build distributed systems, including configuration management, service discovery, routing, circuit breakers, messaging, and more.
 
-To use Spring Cloud, you will need to add the appropriate Spring Cloud starter dependencies to your project. For example, to use the Spring Cloud Config Server, you would add the `spring-cloud-config-server` dependency.
+## Release Trains and Compatibility
+Spring Cloud ships in release trains. The current train is **2025.1.1 (Oakwood)** and it supports **Spring Boot 4.0.2**. Always align your Spring Cloud version with the compatible Spring Boot line.
 
-Once you have added the dependencies, you can enable the Spring Cloud features by adding the appropriate annotation to your application. For example, to enable the Config Server, you would add the `@EnableConfigServer` annotation.
+## Dependency Management (Recommended)
+Use the Spring Cloud BOM or Spring Initializr to keep versions aligned.
+
+### Maven
+```xml
+<properties>
+  <spring-cloud.version>2025.1.1</spring-cloud.version>
+</properties>
+
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-dependencies</artifactId>
+      <version>${spring-cloud.version}</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+```
+
+### Gradle
+```gradle
+ext {
+  set("springCloudVersion", "2025.1.1")
+}
+
+dependencies {
+  implementation platform("org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}")
+}
+```
+
+## Common Starters
+- Configuration: `spring-cloud-starter-config`
+- Service discovery: `spring-cloud-starter-netflix-eureka-client`
+- API gateway: `spring-cloud-starter-gateway`
+- Declarative HTTP: `spring-cloud-starter-openfeign`
+- Circuit breaker: `spring-cloud-starter-circuitbreaker-resilience4j`
+- Messaging: `spring-cloud-starter-stream-kafka` or `spring-cloud-starter-stream-rabbit`
+- Kubernetes integration: `spring-cloud-starter-kubernetes-client`
+- Secrets: `spring-cloud-starter-vault-config`
+
+## References
+- [Spring Cloud project page](https://spring.io/projects/spring-cloud)
+- [Spring Cloud release train reference](https://docs.spring.io/spring-cloud/release/reference/html/)
+- [Spring Cloud 2025.1.1 release notes](https://spring.io/blog/2025/12/19/spring-cloud-2025-1-1-is-available)
+- [Spring Boot 4.0.2 release notes](https://spring.io/blog/2025/12/11/spring-boot-4-0-2-available-now)

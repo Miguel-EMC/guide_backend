@@ -1,21 +1,49 @@
 # 17 - Spring HATEOAS
 
-Spring HATEOAS is a library of APIs that you can use to create REST representations that follow the HATEOAS (Hypermedia as the Engine of Application State) principle. It provides a set of classes that allow you to easily add links to your REST representations.
+Spring HATEOAS helps you build hypermedia-driven REST APIs by adding links and affordances to representations. The latest release is 3.0.2.
 
-To use Spring HATEOAS, you will need to add the `spring-boot-starter-hateoas` dependency to your project.
+## When to Use
+- You want discoverable APIs with links and navigation
+- You need HAL or other hypermedia formats
+- You want to evolve APIs without breaking clients
 
-Once you have added the dependency, you can create a representation model by extending the `RepresentationModel` class.
+## Dependencies
+### Maven
+```xml
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-hateoas</artifactId>
+</dependency>
+```
 
-Here is an example of a simple representation model:
+### Gradle
+```gradle
+implementation "org.springframework.boot:spring-boot-starter-hateoas"
+```
+
+## Representation Example
+```java
+public record OrderDto(Long id, String status) {
+}
+```
 
 ```java
-public class MyEntityModel extends RepresentationModel<MyEntityModel> {
+@Component
+public class OrderModelAssembler implements RepresentationModelAssembler<OrderDto, EntityModel<OrderDto>> {
 
-    private final String name;
-
-    public MyEntityModel(MyEntity entity) {
-        this.name = entity.getName();
-        add(linkTo(methodOn(MyController.class).myEntity(entity.getId())).withSelfRel());
+    @Override
+    public EntityModel<OrderDto> toModel(OrderDto order) {
+        return EntityModel.of(order,
+            linkTo(methodOn(OrderController.class).getOrder(order.id())).withSelfRel(),
+            linkTo(methodOn(OrderController.class).getOrders()).withRel("orders"));
     }
 }
 ```
+
+## Notes
+- Pair with Spring MVC or Spring WebFlux controllers.
+- Spring Data REST integrates with Spring HATEOAS out of the box.
+
+## References
+- [Spring HATEOAS project page](https://spring.io/projects/spring-hateoas)
+- [Spring HATEOAS reference](https://docs.spring.io/spring-hateoas/reference/)

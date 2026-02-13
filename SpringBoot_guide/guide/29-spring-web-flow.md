@@ -1,13 +1,27 @@
 # 29 - Spring Web Flow
 
-Spring Web Flow is a project that provides a way to define and manage the flow of a web application. It is a good choice for applications that have complex and conversational UIs.
+Spring Web Flow provides a framework for defining and managing conversational web flows. The current major line is 4.0.0.
 
-To use Spring Web Flow, you will need to add the `spring-webflow` dependency to your project.
+## When to Use
+- Complex multi-step web forms
+- Wizards and long-lived user interactions
+- Flows that need explicit state transitions
 
-Once you have added the dependency, you can create a flow by creating an XML file.
+## Dependencies
+### Maven
+```xml
+<dependency>
+  <groupId>org.springframework.webflow</groupId>
+  <artifactId>spring-webflow</artifactId>
+</dependency>
+```
 
-Here is an example of a simple flow that has two views:
+### Gradle
+```gradle
+implementation "org.springframework.webflow:spring-webflow"
+```
 
+## Flow Definition (XML)
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <flow xmlns="http://www.springframework.org/schema/webflow"
@@ -15,13 +29,22 @@ Here is an example of a simple flow that has two views:
       xsi:schemaLocation="http://www.springframework.org/schema/webflow
                           http://www.springframework.org/schema/webflow/spring-webflow.xsd">
 
-    <view-state id="view1">
-        <transition on="next" to="view2"/>
+    <view-state id="step1">
+        <transition on="next" to="step2"/>
     </view-state>
 
-    <view-state id="view2">
-        <transition on="previous" to="view1"/>
+    <view-state id="step2">
+        <transition on="previous" to="step1"/>
     </view-state>
 
+    <end-state id="done"/>
 </flow>
 ```
+
+## Notes
+- Web Flow is commonly paired with Spring MVC.
+- Flows can also be defined in Java configuration for dynamic use cases.
+
+## References
+- [Spring Web Flow project page](https://spring.io/projects/spring-webflow)
+- [Spring Web Flow reference](https://docs.spring.io/spring-webflow/docs/4.0.0/reference/html/)

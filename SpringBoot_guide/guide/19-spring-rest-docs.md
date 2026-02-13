@@ -1,26 +1,49 @@
 # 19 - Spring REST Docs
 
-Spring REST Docs is a tool that helps you document your RESTful services. It combines handwritten documentation with auto-generated snippets produced with the Spring MVC Test framework.
+Spring REST Docs generates API documentation snippets from your tests and combines them with hand-written docs. The latest release is 4.0.1.
 
-To use Spring REST Docs, you will need to add the `spring-restdocs-mockmvc` dependency to your project.
+## When to Use
+- You want accurate docs that stay in sync with tests
+- You prefer contract-first documentation
+- You want HTML or PDF outputs via Asciidoctor
 
-Once you have added the dependency, you can create a test that generates documentation snippets.
+## Dependencies
+### Maven (MockMvc)
+```xml
+<dependency>
+  <groupId>org.springframework.restdocs</groupId>
+  <artifactId>spring-restdocs-mockmvc</artifactId>
+  <scope>test</scope>
+</dependency>
+```
 
-Here is an example of a test that generates a documentation snippet for a simple REST API:
+### Gradle (WebTestClient)
+```gradle
+testImplementation "org.springframework.restdocs:spring-restdocs-webtestclient"
+```
 
+## MockMvc Example
 ```java
-@WebMvcTest(MyController.class)
+@WebMvcTest(OrdersController.class)
 @AutoConfigureRestDocs
-public class MyControllerTests {
+class OrdersControllerDocs {
 
     @Autowired
     private MockMvc mockMvc;
 
     @Test
-    public void shouldReturnMyEntity() throws Exception {
-        this.mockMvc.perform(get("/my-entity/1"))
-                .andExpect(status().isOk())
-                .andDo(document("my-entity"));
+    void getOrder() throws Exception {
+        mockMvc.perform(get("/orders/{id}", 1))
+            .andExpect(status().isOk())
+            .andDo(document("orders-get"));
     }
 }
 ```
+
+## Notes
+- Snippets are generated under `build/generated-snippets`.
+- Use Asciidoctor to assemble final docs.
+
+## References
+- [Spring REST Docs project page](https://spring.io/projects/spring-restdocs)
+- [Spring REST Docs reference](https://docs.spring.io/spring-restdocs/reference/)

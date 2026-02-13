@@ -1,19 +1,60 @@
 # 10 - Spring Data R2DBC
 
-Spring Data R2DBC is a sub-project of Spring Data that provides support for R2DBC. R2DBC stands for Reactive Relational Database Connectivity and is a specification for reactive drivers for SQL databases.
+Spring Data R2DBC provides reactive repository support for relational databases using R2DBC drivers. The latest release is 4.0.2.
 
-To use Spring Data R2DBC, you will need to add the `spring-boot-starter-data-r2dbc` dependency to your project.
+## When to Use
+- You need reactive, non-blocking SQL access
+- You want backpressure-aware data pipelines
+- Your drivers support R2DBC
 
-Here is an example of a Spring Data R2DBC repository:
+## Dependencies
+### Maven
+```xml
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-data-r2dbc</artifactId>
+</dependency>
+```
 
+### Gradle
+```gradle
+implementation "org.springframework.boot:spring-boot-starter-data-r2dbc"
+```
+
+You also need a driver, for example:
+```gradle
+implementation "io.r2dbc:r2dbc-postgresql"
+```
+
+## Configuration
+```yaml
+spring:
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/app
+    username: app
+    password: secret
+```
+
+## Repository Example
 ```java
-@Repository
-public interface MyRepository extends ReactiveCrudRepository<MyEntity, Long> {
-
-    Flux<MyEntity> findByStatus(String status);
+@Table("customers")
+public class Customer {
+    @Id
+    private Long id;
+    private String firstName;
+    private String lastName;
 }
 ```
 
-In this example, we have created a repository for the `MyEntity` entity. We have extended the `ReactiveCrudRepository` interface, which provides us with a number of methods for interacting with the database in a reactive way, such as `save()`, `findAll()`, and `findById()`.
+```java
+public interface CustomerRepository extends ReactiveCrudRepository<Customer, Long> {
+    Flux<Customer> findByLastName(String lastName);
+}
+```
 
-We have also defined a custom method, `findByStatus()`, which will allow us to find all of the entities that have a certain status.
+## Transactions
+Use `R2dbcTransactionManager` with `@Transactional` for reactive transactions.
+
+## References
+- [Spring Data R2DBC project page](https://spring.io/projects/spring-data-r2dbc)
+- [Spring Data R2DBC reference](https://docs.spring.io/spring-data/r2dbc/reference/)

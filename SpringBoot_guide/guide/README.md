@@ -1,6 +1,6 @@
 # Spring Boot Guide
 
-This guide provides a comprehensive overview of the Spring Boot framework. It covers a wide range of topics, from the basics of the Spring Framework to advanced topics like Spring Cloud and Spring Security.
+This guide provides a comprehensive overview of Spring Boot 4.x. It covers topics from Spring Framework basics to advanced areas like Spring Cloud and Spring Security.
 
 ## Chapters
 
@@ -38,5 +38,4 @@ This guide provides a comprehensive overview of the Spring Boot framework. It co
 *   [31 - Spring Cloud](./31-spring-cloud.md)
 *   [32 - Spring Cloud Data Flow](./32-spring-cloud-data-flow.md)
 *   [33 - Spring gRPC](./33-spring-grpc.md)
-*   [20-spring-boot-3-3-features](./20-spring-boot-3-3-features.md)
 *   [README](./README.md)
