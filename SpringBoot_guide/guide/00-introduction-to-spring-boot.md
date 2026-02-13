@@ -13,7 +13,7 @@ Spring Boot is an opinionated framework for building stand-alone, production-gra
 - **Externalized configuration:** `application.yml`/`application.properties` with profiles.
 - **Profiles:** Environment-specific configuration using `spring.profiles.active`.
 
-## Typical Project Structure
+## Typical Project Structure (Layered)
 ```
 src/main/java
   com.example.app
@@ -55,6 +55,126 @@ src/test/resources
 - Put external adapters in `integration/` to isolate HTTP/DB/broker clients.
 - Use `config/` for Spring `@Configuration` and bootstrapping.
 - `db/migration/` is commonly used for Flyway or Liquibase migrations.
+
+## Feature-Based Structure (By Domain)
+```
+src/main/java
+  com.example.app
+    Application.java
+    shared/
+      config/
+      security/
+      util/
+    orders/
+      web/
+        OrderController.java
+        dto/
+      service/
+        OrderService.java
+      repository/
+        OrderRepository.java
+      domain/
+        Order.java
+        OrderStatus.java
+    customers/
+      web/
+      service/
+      repository/
+      domain/
+```
+
+## Hexagonal (Ports and Adapters)
+```
+src/main/java
+  com.example.app
+    Application.java
+    config/
+    domain/
+      model/
+      service/
+      port/
+        in/
+        out/
+    adapter/
+      in/
+        web/
+      out/
+        persistence/
+        messaging/
+        http/
+```
+
+## Modular Monolith (Spring Modulith Style)
+```
+src/main/java
+  com.example.app
+    Application.java
+    shared/
+    orders/
+      package-info.java
+      api/
+      internal/
+    inventory/
+      package-info.java
+      api/
+      internal/
+```
+
+## Multi-Module (Maven/Gradle)
+```
+root/
+  build.gradle.kts (or pom.xml)
+  settings.gradle.kts
+  app/
+    src/main/java
+  common/
+    src/main/java
+  persistence/
+    src/main/java
+  integration/
+    src/main/java
+```
+
+## Microservices (Monorepo Example)
+```
+root/
+  services/
+    orders-service/
+      src/main/java
+      src/main/resources
+    billing-service/
+      src/main/java
+      src/main/resources
+    inventory-service/
+      src/main/java
+      src/main/resources
+  libs/
+    shared-kernel/
+    observability/
+  infrastructure/
+    docker/
+    kubernetes/
+    terraform/
+  gateway/
+    src/main/java
+```
+
+## Microservices (Multi-Repo Example)
+```
+orders-service/
+billing-service/
+inventory-service/
+api-gateway/
+shared-kernel/
+infra/
+```
+
+## Choosing a Style
+- Use layered for simple CRUD apps.
+- Use feature-based to scale teams by domain.
+- Use hexagonal for complex integrations and testing.
+- Use modular monolith to enforce boundaries without network cost.
+- Use microservices when teams and deployments must be independent.
 
 ## What You Will Build
 This guide walks from fundamentals to advanced production topics:
