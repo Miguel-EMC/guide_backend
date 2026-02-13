@@ -20,13 +20,41 @@ src/main/java
     Application.java
     config/
     web/
+      controller/
+      dto/
+      mapper/
     service/
     repository/
+    domain/
+      model/
+      event/
+    integration/
+    security/
+    jobs/
 src/main/resources
   application.yml
+  application-dev.yml
+  application-prod.yml
+  db/migration/
   static/
   templates/
+src/test/java
+  com.example.app
+    web/
+    service/
+    repository/
+    integration/
+src/test/resources
+  application-test.yml
+  testdata/
 ```
+
+## Notes on Structure
+- Keep web, service, and repository layered for clarity in small apps.
+- Use `domain/` for core business objects and events.
+- Put external adapters in `integration/` to isolate HTTP/DB/broker clients.
+- Use `config/` for Spring `@Configuration` and bootstrapping.
+- `db/migration/` is commonly used for Flyway or Liquibase migrations.
 
 ## What You Will Build
 This guide walks from fundamentals to advanced production topics:
