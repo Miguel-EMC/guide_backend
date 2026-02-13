@@ -1,0 +1,24 @@
+services:
+  gateway:
+    build: ./gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      - orders-service
+      - billing-service
+      - inventory-service
+
+  orders-service:
+    build: ./orders-service
+    ports:
+      - "8081:8081"
+
+  billing-service:
+    build: ./billing-service
+    ports:
+      - "8082:8082"
+
+  inventory-service:
+    build: ./inventory-service
+    ports:
+      - "8083:8083"

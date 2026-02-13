@@ -38,4 +38,5 @@ This guide provides a comprehensive overview of Spring Boot 4.x. It covers topic
 *   [31 - Spring Cloud](./31-spring-cloud.md)
 *   [32 - Spring Cloud Data Flow](./32-spring-cloud-data-flow.md)
 *   [33 - Spring gRPC](./33-spring-grpc.md)
+*   [34 - Microservices Architecture](./34-microservices-architecture.md)
 *   [README](./README.md)
