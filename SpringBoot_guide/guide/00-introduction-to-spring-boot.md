@@ -176,6 +176,58 @@ infra/
 - Use modular monolith to enforce boundaries without network cost.
 - Use microservices when teams and deployments must be independent.
 
+## Microservices Architecture (Real-World Overview)
+```
+Client
+  |
+API Gateway
+  |
+  +--> Auth Service -----> User DB
+  |
+  +--> Orders Service ---> Orders DB
+  |        |
+  |        +--> Inventory Service ---> Inventory DB
+  |
+  +--> Billing Service ---> Payments DB
+  |
+  +--> Notification Service ---> Messaging Broker
+```
+
+## Synchronous Communication
+- REST for broad client compatibility and easy debugging.
+- gRPC for high-performance internal calls and streaming.
+- Apply timeouts, retries, and circuit breakers for resilience.
+
+## Asynchronous Communication
+- Event-driven flows for decoupling and scale.
+- Use message brokers for reliable delivery and backpressure.
+- Design events as immutable facts, not commands.
+
+## Configuration and Discovery
+- Centralized config for secrets and shared settings.
+- Service discovery for dynamic scaling.
+- API gateway for routing, auth, and rate limiting.
+
+## Security
+- OAuth2/OpenID Connect for end-user auth.
+- mTLS or signed JWT for service-to-service trust.
+- Principle of least privilege for every service.
+
+## Observability
+- Metrics, logs, and traces as first-class concerns.
+- Correlation IDs across services for traceability.
+- Dashboards and alerts tied to SLOs.
+
+## Data Strategy
+- Database per service to reduce coupling.
+- Use sagas or outbox patterns for distributed consistency.
+- Avoid synchronous cross-service transactions.
+
+## Deployment
+- Containerize each service.
+- Use Kubernetes or managed platforms for scaling.
+- Automate builds and releases with CI/CD.
+
 ## What You Will Build
 This guide walks from fundamentals to advanced production topics:
 - REST APIs and security
