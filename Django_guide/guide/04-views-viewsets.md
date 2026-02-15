@@ -1,458 +1,185 @@
-# Views and ViewSets
+# Views and ViewSets (DRF)
 
-DRF provides several ways to build API views: function-based views, class-based views, generic views, and ViewSets.
+This chapter covers DRF's view options, from simple function views to powerful ViewSets.
 
-## Function-Based Views
-
-### Basic Function View
+## 1) Function-Based Views (Quick and Explicit)
 
 ```python
-# doctors/views.py
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from .models import Doctor
-from .serializers import DoctorSerializer
+from .serializers import DoctorReadSerializer, DoctorCreateSerializer
 
-@api_view(['GET', 'POST'])
+
+@api_view(["GET", "POST"])
 def doctor_list(request):
-    if request.method == 'GET':
+    if request.method == "GET":
         doctors = Doctor.objects.all()
-        serializer = DoctorSerializer(doctors, many=True)
-        return Response(serializer.data)
+        return Response(DoctorReadSerializer(doctors, many=True).data)
 
-    elif request.method == 'POST':
-        serializer = DoctorSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['GET', 'PUT', 'DELETE'])
-def doctor_detail(request, pk):
-    try:
-        doctor = Doctor.objects.get(pk=pk)
-    except Doctor.DoesNotExist:
-        return Response(status=status.HTTP_404_NOT_FOUND)
-
-    if request.method == 'GET':
-        serializer = DoctorSerializer(doctor)
-        return Response(serializer.data)
-
-    elif request.method == 'PUT':
-        serializer = DoctorSerializer(doctor, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    elif request.method == 'DELETE':
-        doctor.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    serializer = DoctorCreateSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    doctor = serializer.save()
+    return Response(DoctorReadSerializer(doctor).data, status=status.HTTP_201_CREATED)
 ```
 
-## Class-Based Views (APIView)
-
-### Basic APIView
+## 2) APIView (Class-Based)
 
 ```python
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Doctor
-from .serializers import DoctorSerializer
-
-class DoctorListView(APIView):
-    """List all doctors or create a new doctor."""
-
-    def get(self, request):
-        doctors = Doctor.objects.all()
-        serializer = DoctorSerializer(doctors, many=True)
-        return Response(serializer.data)
-
-    def post(self, request):
-        serializer = DoctorSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+from django.shortcuts import get_object_or_404
 
 
 class DoctorDetailView(APIView):
-    """Retrieve, update or delete a doctor."""
-
-    def get_object(self, pk):
-        try:
-            return Doctor.objects.get(pk=pk)
-        except Doctor.DoesNotExist:
-            raise Http404
-
     def get(self, request, pk):
-        doctor = self.get_object(pk)
-        serializer = DoctorSerializer(doctor)
-        return Response(serializer.data)
+        doctor = get_object_or_404(Doctor, pk=pk)
+        return Response(DoctorReadSerializer(doctor).data)
 
     def put(self, request, pk):
-        doctor = self.get_object(pk)
-        serializer = DoctorSerializer(doctor, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        doctor = get_object_or_404(Doctor, pk=pk)
+        serializer = DoctorCreateSerializer(doctor, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        doctor = serializer.save()
+        return Response(DoctorReadSerializer(doctor).data)
 
     def delete(self, request, pk):
-        doctor = self.get_object(pk)
+        doctor = get_object_or_404(Doctor, pk=pk)
         doctor.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 ```
 
-## Generic Views
+## 3) Generic Views (Best Default for Most APIs)
 
-DRF provides pre-built generic views for common patterns:
-
-### Generic View Classes
-
-| Class | Methods | Description |
-|-------|---------|-------------|
-| `CreateAPIView` | POST | Create a resource |
-| `ListAPIView` | GET | List resources |
-| `RetrieveAPIView` | GET | Retrieve single resource |
-| `DestroyAPIView` | DELETE | Delete a resource |
-| `UpdateAPIView` | PUT, PATCH | Update a resource |
-| `ListCreateAPIView` | GET, POST | List and create |
-| `RetrieveUpdateAPIView` | GET, PUT, PATCH | Retrieve and update |
-| `RetrieveDestroyAPIView` | GET, DELETE | Retrieve and delete |
-| `RetrieveUpdateDestroyAPIView` | GET, PUT, PATCH, DELETE | Full CRUD on single resource |
-
-### Using Generic Views
+Generic views combine common patterns with built-in mixins.
 
 ```python
-# doctors/views.py
 from rest_framework import generics
-from .models import Doctor, Department, DoctorAvailability
-from .serializers import (
-    DoctorSerializer,
-    DepartmentSerializer,
-    DoctorAvailabilitySerializer
-)
 
-# List and Create
-class ListDoctorView(generics.ListCreateAPIView):
+
+class DoctorListView(generics.ListCreateAPIView):
     queryset = Doctor.objects.all()
-    serializer_class = DoctorSerializer
+    serializer_class = DoctorReadSerializer
 
-# Retrieve, Update, Delete
-class DetailDoctorView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Doctor.objects.all()
-    serializer_class = DoctorSerializer
-
-# List only
-class ListDepartmentView(generics.ListAPIView):
-    queryset = Department.objects.all()
-    serializer_class = DepartmentSerializer
-
-# Create only
-class CreateDoctorView(generics.CreateAPIView):
-    queryset = Doctor.objects.all()
-    serializer_class = DoctorSerializer
-```
-
-### Combining Generic Views
-
-```python
-# patients/views.py
-from rest_framework import generics
-from .models import Patient
-from .serializers import PatientSerializer
-
-class ListPatientsView(generics.ListAPIView, generics.CreateAPIView):
-    """
-    GET: List all patients
-    POST: Create a new patient
-    """
-    queryset = Patient.objects.all()
-    serializer_class = PatientSerializer
-
-
-class DetailPatientView(
-    generics.RetrieveAPIView,
-    generics.UpdateAPIView,
-    generics.DestroyAPIView
-):
-    """
-    GET: Retrieve a patient
-    PUT/PATCH: Update a patient
-    DELETE: Delete a patient
-    """
-    queryset = Patient.objects.all()
-    serializer_class = PatientSerializer
-```
-
-### Customizing Generic Views
-
-```python
-class ListDoctorView(generics.ListCreateAPIView):
-    serializer_class = DoctorSerializer
-
-    def get_queryset(self):
-        """Filter doctors based on query params."""
-        queryset = Doctor.objects.all()
-
-        # Filter by vacation status
-        on_vacation = self.request.query_params.get('on_vacation')
-        if on_vacation is not None:
-            queryset = queryset.filter(is_on_vacation=on_vacation == 'true')
-
-        # Search by name
-        search = self.request.query_params.get('search')
-        if search:
-            queryset = queryset.filter(
-                Q(first_name__icontains=search) |
-                Q(last_name__icontains=search)
-            )
-
-        return queryset
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return DoctorCreateSerializer
+        return DoctorReadSerializer
 
     def perform_create(self, serializer):
-        """Custom create logic."""
         serializer.save(created_by=self.request.user)
 ```
 
-## ViewSets
+### Common Generic Views
 
-ViewSets combine multiple view actions into a single class:
+| View | Methods | Purpose |
+|------|---------|---------|
+| `ListAPIView` | GET | List resources |
+| `CreateAPIView` | POST | Create resource |
+| `RetrieveAPIView` | GET | Retrieve single resource |
+| `UpdateAPIView` | PUT/PATCH | Update resource |
+| `DestroyAPIView` | DELETE | Delete resource |
+| `ListCreateAPIView` | GET/POST | List + create |
+| `RetrieveUpdateDestroyAPIView` | GET/PUT/PATCH/DELETE | Full detail CRUD |
 
-### Basic ViewSet
+## 4) ViewSets (Best for CRUD APIs)
+
+ViewSets bundle CRUD actions into a single class and integrate with routers.
 
 ```python
-# doctors/viewsets.py
 from rest_framework import viewsets
-from rest_framework.response import Response
-from rest_framework.decorators import action
-from .models import Doctor
-from .serializers import DoctorSerializer
-
-class DoctorViewSet(viewsets.ModelViewSet):
-    """
-    A viewset for viewing and editing doctor instances.
-
-    Provides: list, create, retrieve, update, partial_update, destroy
-    """
-    queryset = Doctor.objects.all()
-    serializer_class = DoctorSerializer
-```
-
-### ViewSet Types
-
-| ViewSet | Included Actions |
-|---------|-----------------|
-| `ViewSet` | Base class, no actions |
-| `GenericViewSet` | Generic view behavior, no actions |
-| `ModelViewSet` | Full CRUD: list, create, retrieve, update, partial_update, destroy |
-| `ReadOnlyModelViewSet` | Read-only: list, retrieve |
-
-### Custom Actions
-
-```python
-# doctors/viewsets.py
-from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Doctor
-from .serializers import DoctorSerializer
-from bookings.models import Appointment
-from bookings.serializers import AppointmentSerializer
+
 
 class DoctorViewSet(viewsets.ModelViewSet):
     queryset = Doctor.objects.all()
-    serializer_class = DoctorSerializer
+    serializer_class = DoctorReadSerializer
 
-    @action(detail=True, methods=['post'])
-    def set_on_vacation(self, request, pk=None):
-        """Mark doctor as on vacation."""
-        doctor = self.get_object()
-        doctor.is_on_vacation = True
-        doctor.save()
-        return Response({'status': 'Doctor is now on vacation'})
+    def get_serializer_class(self):
+        if self.action in {"create", "update", "partial_update"}:
+            return DoctorCreateSerializer
+        return DoctorReadSerializer
 
-    @action(detail=True, methods=['post'])
-    def set_off_vacation(self, request, pk=None):
-        """Mark doctor as off vacation."""
-        doctor = self.get_object()
-        doctor.is_on_vacation = False
-        doctor.save()
-        return Response({'status': 'Doctor is now available'})
-
-    @action(detail=True, methods=['get', 'post'])
-    def appointments(self, request, pk=None):
-        """Get or create appointments for this doctor."""
-        doctor = self.get_object()
-
-        if request.method == 'GET':
-            appointments = Appointment.objects.filter(doctor=doctor)
-            serializer = AppointmentSerializer(appointments, many=True)
-            return Response(serializer.data)
-
-        elif request.method == 'POST':
-            serializer = AppointmentSerializer(data=request.data)
-            if serializer.is_valid():
-                serializer.save(doctor=doctor)
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=["get"])
     def available(self, request):
-        """List all available (not on vacation) doctors."""
-        doctors = Doctor.objects.filter(is_on_vacation=False)
+        doctors = self.get_queryset().filter(is_active=True)
         serializer = self.get_serializer(doctors, many=True)
         return Response(serializer.data)
 ```
 
-### Custom Action Decorators
+### ViewSet Types
+
+| ViewSet | Actions |
+|---------|---------|
+| `ViewSet` | Custom actions only |
+| `GenericViewSet` | Generic behavior without defaults |
+| `ReadOnlyModelViewSet` | `list`, `retrieve` |
+| `ModelViewSet` | Full CRUD |
+
+## 5) Custom Actions
 
 ```python
 from rest_framework.decorators import action
 
-# Detail action (operates on single object)
-@action(detail=True, methods=['post'])
-def activate(self, request, pk=None):
-    pass
 
-# List action (operates on collection)
-@action(detail=False, methods=['get'])
-def recent(self, request):
-    pass
-
-# Custom URL path
-@action(detail=True, methods=['post'], url_path='mark-complete')
-def mark_complete(self, request, pk=None):
-    pass
-
-# Different serializer for action
-@action(detail=True, methods=['get'], serializer_class=DetailedDoctorSerializer)
-def detailed(self, request, pk=None):
-    pass
-```
-
-## Mixins
-
-Create custom ViewSets with specific actions:
-
-```python
-from rest_framework import viewsets, mixins
-
-# Read-only viewset (list + retrieve)
-class ReadOnlyDoctorViewSet(
-    mixins.ListModelMixin,
-    mixins.RetrieveModelMixin,
-    viewsets.GenericViewSet
-):
+class DoctorViewSet(viewsets.ModelViewSet):
     queryset = Doctor.objects.all()
-    serializer_class = DoctorSerializer
+    serializer_class = DoctorReadSerializer
 
-# Create and List only
-class CreateListDoctorViewSet(
-    mixins.CreateModelMixin,
-    mixins.ListModelMixin,
-    viewsets.GenericViewSet
-):
+    @action(detail=True, methods=["post"], url_path="set-on-vacation")
+    def set_on_vacation(self, request, pk=None):
+        doctor = self.get_object()
+        doctor.is_active = False
+        doctor.save(update_fields=["is_active"])
+        return Response({"status": "Doctor deactivated"})
+```
+
+## 6) Common Hooks
+
+```python
+class DoctorViewSet(viewsets.ModelViewSet):
     queryset = Doctor.objects.all()
-    serializer_class = DoctorSerializer
-```
-
-### Available Mixins
-
-| Mixin | Action | Method |
-|-------|--------|--------|
-| `CreateModelMixin` | create | POST |
-| `ListModelMixin` | list | GET |
-| `RetrieveModelMixin` | retrieve | GET |
-| `UpdateModelMixin` | update, partial_update | PUT, PATCH |
-| `DestroyModelMixin` | destroy | DELETE |
-
-## Response and Status Codes
-
-```python
-from rest_framework.response import Response
-from rest_framework import status
-
-# Success responses
-Response(data, status=status.HTTP_200_OK)          # 200
-Response(data, status=status.HTTP_201_CREATED)     # 201
-Response(status=status.HTTP_204_NO_CONTENT)        # 204
-
-# Client error responses
-Response(errors, status=status.HTTP_400_BAD_REQUEST)    # 400
-Response(status=status.HTTP_401_UNAUTHORIZED)           # 401
-Response(status=status.HTTP_403_FORBIDDEN)              # 403
-Response(status=status.HTTP_404_NOT_FOUND)              # 404
-Response(status=status.HTTP_409_CONFLICT)               # 409
-
-# Server error responses
-Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)  # 500
-```
-
-## Complete Views Example
-
-```python
-# bookings/views.py
-from rest_framework import generics, status
-from rest_framework.response import Response
-from .models import Appointment, MedicalNote
-from .serializers import AppointmentSerializer, MedicalNoteSerializer
-
-
-class ListAppointmentView(generics.ListAPIView, generics.CreateAPIView):
-    """
-    GET: List all appointments
-    POST: Create a new appointment
-    """
-    queryset = Appointment.objects.all()
-    serializer_class = AppointmentSerializer
+    serializer_class = DoctorReadSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        qs = Doctor.objects.all()
+        specialty = self.request.query_params.get("specialty")
+        if specialty:
+            qs = qs.filter(specialty=specialty)
+        return qs
 
-        # Filter by doctor
-        doctor_id = self.request.query_params.get('doctor')
-        if doctor_id:
-            queryset = queryset.filter(doctor_id=doctor_id)
-
-        # Filter by patient
-        patient_id = self.request.query_params.get('patient')
-        if patient_id:
-            queryset = queryset.filter(patient_id=patient_id)
-
-        # Filter by status
-        status_param = self.request.query_params.get('status')
-        if status_param:
-            queryset = queryset.filter(status=status_param)
-
-        return queryset
-
-
-class DetailAppointmentView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    GET: Retrieve appointment details
-    PUT/PATCH: Update appointment
-    DELETE: Cancel appointment
-    """
-    queryset = Appointment.objects.all()
-    serializer_class = AppointmentSerializer
-
-    def perform_destroy(self, instance):
-        # Soft delete - change status instead of deleting
-        instance.status = 'cancelled'
-        instance.save()
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
 ```
 
----
+## 7) Auth, Permissions, Throttling, and Pagination
+
+```python
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import UserRateThrottle
+
+
+class DoctorViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [UserRateThrottle]
+    pagination_class = None  # Or set a custom paginator
+```
+
+## Best Practices
+
+- Prefer `ModelViewSet` + routers for CRUD APIs.
+- Use `get_serializer_class` for read/write separation.
+- Scope `get_queryset` with the current user to avoid data leaks.
+- Use `select_related` and `prefetch_related` in viewsets for performance.
 
 ## Next Steps
 
-- [URLs and Routing](./05-urls-routing.md) - URL patterns and routers
+- [URLs and Routing](./05-urls-routing.md) - Routers and URL patterns
+- [Authentication and Permissions](./06-authentication-permissions.md) - Secure your API
 
 ---
 
-[← Previous: Serializers](./03-serializers.md) | [Back to Index](./README.md) | [Next: URLs and Routing →](./05-urls-routing.md)
+[Previous: Serializers](./03-serializers.md) | [Back to Index](./README.md) | [Next: URLs and Routing](./05-urls-routing.md)

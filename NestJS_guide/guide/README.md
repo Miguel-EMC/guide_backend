@@ -1,8 +1,27 @@
-# NestJS Backend Guide - Table of Contents
+# 🧠 NestJS Backend Guide
 
-Welcome to the comprehensive guide to building efficient and scalable backend applications with NestJS 11.1.12+, featuring Express v5 integration and enhanced performance.
+A complete NestJS curriculum for building scalable APIs with TypeScript.
 
-## Chapters
+---
+
+## 🎯 Who This Is For
+
+- Developers moving from Express to NestJS
+- Teams building modular, testable APIs
+- Engineers scaling TypeScript backends
+
+---
+
+## 🛠️ What You Will Build
+
+- A modular REST API
+- Authentication and guards
+- File uploads, caching, queues
+- Production deployment patterns
+
+---
+
+## 📚 Chapters
 
 1.  [Introduction](./01-introduction.md)
 2.  [Modules and Controllers](./02-modules-controllers.md)
@@ -28,4 +47,5 @@ Welcome to the comprehensive guide to building efficient and scalable backend ap
 22. [Common Patterns](./22-common-patterns.md)
 
 ---
+
 _Guide created by Miguel Muzo ([@migueldev11](https://github.com/migueldev11))_

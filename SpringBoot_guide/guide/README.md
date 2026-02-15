@@ -1,8 +1,27 @@
-# Spring Boot Guide
+# 🌱 Spring Boot Backend Guide
 
-This guide provides a comprehensive overview of Spring Boot 4.x. It covers topics from Spring Framework basics to advanced areas like Spring Cloud and Spring Security.
+A comprehensive Spring Boot curriculum from fundamentals to enterprise‑grade APIs.
 
-## Chapters
+---
+
+## 🎯 Who This Is For
+
+- Java developers building backend services
+- Teams adopting Spring Boot for microservices
+- Engineers preparing production deployments
+
+---
+
+## 🛠️ What You Will Build
+
+- REST APIs with Spring MVC/WebFlux
+- Persistence with Spring Data
+- Security with Spring Security
+- Production‑grade deployment practices
+
+---
+
+## 📚 Chapters
 
 *   [00 - Introduction to Spring Boot](./00-introduction-to-spring-boot.md)
 *   [01 - Setting Up the Environment](./01-setting-up-the-environment.md)
@@ -38,5 +57,7 @@ This guide provides a comprehensive overview of Spring Boot 4.x. It covers topic
 *   [31 - Spring Cloud](./31-spring-cloud.md)
 *   [32 - Spring Cloud Data Flow](./32-spring-cloud-data-flow.md)
 *   [33 - Spring gRPC](./33-spring-grpc.md)
-*   [34 - Microservices Architecture](./34-microservices-architecture.md)
-*   [README](./README.md)
+
+---
+
+_Guide created by Miguel Muzo ([@migueldev11](https://github.com/migueldev11))_

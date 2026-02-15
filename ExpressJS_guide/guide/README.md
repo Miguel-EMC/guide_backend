@@ -1,6 +1,27 @@
-# Express.js (TypeScript) Backend Guide - Table of Contents
+# 🚂 Express.js (TypeScript) Backend Guide
 
-Welcome to the comprehensive guide to building robust and scalable backend APIs with Node.js and Express, using the power of TypeScript.
+A practical, step‑by‑step Express guide from fundamentals to production APIs.
+
+---
+
+## 🎯 Who This Is For
+
+- Developers new to Node.js/Express
+- Teams building APIs with TypeScript
+- Anyone who wants a clean production‑ready structure
+
+---
+
+## 🛠️ What You Will Build
+
+- A full CRUD API
+- Auth with JWT
+- Validation with Zod
+- Testing with Jest + Supertest
+
+---
+
+## 📚 Chapters
 
 ## Part 1: Node.js & JavaScript Fundamentals
 
@@ -31,4 +52,5 @@ Welcome to the comprehensive guide to building robust and scalable backend APIs 
 16. [Deployment with Docker](./16-deployment-docker.md)
 
 ---
+
 _Guide created by Miguel Muzo ([@migueldev11](https://github.com/migueldev11))_

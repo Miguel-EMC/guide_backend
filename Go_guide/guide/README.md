@@ -1,6 +1,27 @@
-# Go Backend Guide - Table of Contents
+# 🐹 Go Backend Guide
 
-Welcome to the comprehensive guide to building backend applications with Go.
+A structured Go backend guide from language basics to production APIs with Gin.
+
+---
+
+## 🎯 Who This Is For
+
+- Beginners learning Go
+- Backend engineers building fast APIs
+- Teams adopting Go for services
+
+---
+
+## 🛠️ What You Will Build
+
+- Go fundamentals
+- HTTP servers with `net/http`
+- CRUD API with Gin
+- JWT authentication and deployment
+
+---
+
+## 📚 Chapters
 
 ## Part 1: Go Language Fundamentals
 
@@ -37,4 +58,5 @@ Welcome to the comprehensive guide to building backend applications with Go.
 22. [Authentication with JWT](./22-authentication-jwt.md)
 
 ---
+
 _Guide created by Miguel Muzo ([@migueldev11](https://github.com/migueldev11))_

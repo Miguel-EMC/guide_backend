@@ -1,12 +1,38 @@
-# Django Backend Guide - Table of Contents (2026 Edition)
+# 🐍 Django Backend Guide
 
-Welcome to the comprehensive guide to building backend APIs with Django 6.0.1+ and Django REST Framework 3.16+. 
+A complete Django + DRF curriculum from first steps to production, with code, tips, and real‑world patterns.
 
-**⚠️ Python 3.12+ Required** - Django 6.0 introduced major breaking changes including native async support.
+---
 
-## Chapters
+## 🎯 Who This Is For
 
-0.  [Fast Setup with uv](./00-uv-setup.md) - Modern Python package management (Recommended)
+- Beginners who want a structured learning path
+- Backend engineers building production APIs
+- Teams standardizing Django/DRF practices
+
+---
+
+## 🛠️ What You Will Build
+
+- A full Doctor API project
+- Authenticated endpoints with permissions
+- Filtering, pagination, and throttling
+- File uploads, background tasks, and caching
+- Production deployment and CI/CD
+
+---
+
+## 🧭 How to Use This Guide
+
+1. Start at chapter 0 for setup.
+2. Follow chapters in order.
+3. Build the project chapter for hands‑on practice.
+
+---
+
+## 📚 Chapters
+
+0.  [Fast Setup with uv](./00-uv-setup.md)
 1.  [Introduction](./01-introduction.md)
 2.  [Models](./02-models.md)
 3.  [Serializers](./03-serializers.md)
@@ -23,7 +49,7 @@ Welcome to the comprehensive guide to building backend APIs with Django 6.0.1+ a
 14. [Caching](./14-caching.md)
 15. [Signals](./15-signals.md)
 16. [File Uploads](./16-file-uploads.md)
-17. [Celery Tasks](./17-celery-tasks.md)
+17. [Celery and Tasks](./17-celery-tasks.md)
 18. [Middleware](./18-middleware.md)
 19. [Admin Customization](./19-admin-customization.md)
 20. [Deployment](./20-deployment.md)
@@ -32,7 +58,12 @@ Welcome to the comprehensive guide to building backend APIs with Django 6.0.1+ a
 23. [Parsers and Renderers](./23-parsers-renderers.md)
 24. [API Schema Generation](./24-api-schema-generation.md)
 25. [Frontend Integration](./25-frontend-integration.md)
-26. [Django 6.0 Features](./26-django-6-features.md)
+26. [Django 6.0 Notes](./26-django-6-features.md)
+27. [Architecture and Diagrams](./27-architecture-diagrams.md)
+28. [Observability](./28-observability.md)
+29. [Performance and Profiling](./29-performance.md)
+30. [CI/CD Pipeline](./30-ci-cd.md)
 
 ---
+
 _Guide created by Miguel Muzo ([@migueldev11](https://github.com/migueldev11))_

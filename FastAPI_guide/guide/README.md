@@ -1,10 +1,37 @@
-# FastAPI Backend Guide - Table of Contents (2026 Edition)
+# ⚡ FastAPI Backend Guide
 
-Welcome to the comprehensive guide to building high-performance backend APIs with FastAPI, Starlette, and Pydantic, plus modern tooling like the FastAPI CLI and uv.
+A complete, production‑grade FastAPI guide with step‑by‑step chapters, examples, and best practices.
 
-## Chapters
+---
 
-0.  [Fast Setup with uv](./00-uv-setup.md) - Modern project management with uv (Recommended)
+## 🎯 Who This Is For
+
+- Beginners who want a clear path from zero to production
+- Developers migrating from Flask or Django
+- Teams building high‑performance async APIs
+
+---
+
+## 🛠️ What You Will Build
+
+- REST APIs with validation, auth, and database access
+- A complete Todo API project
+- GenAI endpoints with streaming
+- Production deployment with observability, security, and CI/CD
+
+---
+
+## 🧭 How to Use This Guide
+
+1. Start at chapter 0 for setup.
+2. Follow chapters in order.
+3. Build the project chapter for hands‑on practice.
+
+---
+
+## 📚 Chapters
+
+0.  [Fast Setup with uv](./00-uv-setup.md)
 1.  [Introduction](./01-introduction.md)
 2.  [Routing](./02-routing.md)
 3.  [Data Validation](./03-data-validation.md)
@@ -33,4 +60,5 @@ Welcome to the comprehensive guide to building high-performance backend APIs wit
 26. [Production Checklist](./25-production-checklist.md)
 
 ---
+
 _Guide created by Miguel Muzo ([@migueldev11](https://github.com/migueldev11))_

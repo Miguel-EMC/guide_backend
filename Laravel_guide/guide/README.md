@@ -1,8 +1,27 @@
-# Laravel Backend Guide - Table of Contents (2026 Edition)
+# 🧩 Laravel Backend Guide
 
-Welcome to the comprehensive guide to building backend APIs with Laravel 12.x and preparing for Laravel 13 (Q1 2026).
+A complete Laravel API guide from setup to production.
 
-## Chapters
+---
+
+## 🎯 Who This Is For
+
+- Developers new to Laravel
+- Teams building REST APIs with PHP
+- Engineers deploying high‑performance Laravel apps
+
+---
+
+## 🛠️ What You Will Build
+
+- REST APIs with Sanctum auth
+- Queues, events, caching
+- API resources and validation
+- Production deployment
+
+---
+
+## 📚 Chapters
 
 1.  [Introduction](./01-introduction.md)
 2.  [Installation on Linux](./02-installation-linux.md)
@@ -32,4 +51,5 @@ Welcome to the comprehensive guide to building backend APIs with Laravel 12.x an
 26. [Full-Text Search with Scout](./26-full-text-search-scout.md)
 
 ---
+
 _Guide created by Miguel Muzo ([@migueldev11](https://github.com/migueldev11))_
