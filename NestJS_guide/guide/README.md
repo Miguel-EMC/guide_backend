@@ -1,6 +1,6 @@
 # 🧠 NestJS Backend Guide
 
-A complete NestJS curriculum for building scalable APIs with TypeScript.
+A complete, production-grade NestJS guide with step-by-step chapters, examples, and best practices.
 
 ---
 
@@ -14,10 +14,18 @@ A complete NestJS curriculum for building scalable APIs with TypeScript.
 
 ## 🛠️ What You Will Build
 
-- A modular REST API
-- Authentication and guards
-- File uploads, caching, queues
-- Production deployment patterns
+- A modular REST API with validation and auth
+- Background jobs, caching, and file uploads
+- Real-time WebSocket features
+- Production deployment with observability and CI/CD
+
+---
+
+## 🧭 How to Use This Guide
+
+1. Start with the introduction to set up tooling and project structure.
+2. Follow chapters in order for a full learning path.
+3. Build the project chapter for hands-on practice.
 
 ---
 
@@ -45,6 +53,12 @@ A complete NestJS curriculum for building scalable APIs with TypeScript.
 20. [Logging and Monitoring](./20-logging-monitoring.md)
 21. [API Versioning](./21-api-versioning.md)
 22. [Common Patterns](./22-common-patterns.md)
+23. [NestJS 11 Features](./23-nestjs-11-features.md)
+24. [Infrastructure as Code](./24-infrastructure-iac.md)
+25. [SRE and Operations](./25-sre-operations.md)
+26. [Security Hardening](./26-security-hardening.md)
+27. [High-Scale Architecture](./27-high-scale-architecture.md)
+28. [Scaling and Cost Optimization](./28-scaling-cost-optimization.md)
 
 ---
 
