@@ -1,47 +1,124 @@
-# 01 - Introduction to Node.js and Express with TypeScript
+# 01 - Introduction to Node.js and Express (2026 Edition)
 
-Welcome to the comprehensive guide to building modern, robust backend APIs with Node.js, the Express framework, and the TypeScript language.
+This guide teaches modern API development with Node.js, Express 5, and TypeScript. You will go from fundamentals to production and scale with real-world patterns.
 
-This guide will take you from the fundamentals of the Node.js environment to building a complete, production-ready RESTful API.
+## Version Guidance (2026)
+
+| Stack | Recommended | Notes |
+| --- | --- | --- |
+| Node.js | 24.x | Active LTS (production default). |
+| Node.js | 25.x | Current (local dev only). |
+| Node.js | 22.x / 20.x | Maintenance LTS (still supported). |
+| Express | 5.x | Current stable major. |
+| TypeScript | 5.x | Latest stable release line. |
+
+Express 5 requires Node.js >= 18. Use Node 24.x LTS for production.
+
+## What Is Node.js
+
+Node.js is a JavaScript runtime built on the V8 engine. It uses an event-driven, non-blocking model that makes it efficient for I/O-heavy workloads like APIs, real-time services, and edge functions.
+
+Key traits:
+
+- Single-threaded event loop with async I/O.
+- Huge ecosystem through npm.
+- Great fit for APIs, tooling, and streaming workloads.
+
+## What Is Express
+
+Express is a minimal web framework on top of Node.js. It provides routing, middleware, and helpers for building APIs without forcing a heavy structure.
+
+Express gives you:
+
+- A clean routing model.
+- Middleware pipelines for auth, validation, and logging.
+- Simple request and response helpers.
+
+## Express vs Full-Stack Frameworks
+
+Use Express when you want:
+
+- Full control over architecture and dependencies.
+- Minimal abstraction overhead.
+- A framework-agnostic way to build APIs.
+
+Use a higher-level framework when you want built-in modules for queues, caching, or dependency injection out of the box.
+
+## Why TypeScript
+
+TypeScript is the standard for professional Node.js backends.
+
+- Safer refactors with static types.
+- Clear contracts across teams and modules.
+- Better tooling and auto-complete.
+
+## What You Will Build
+
+- A REST API with clean architecture
+- JWT auth with refresh tokens
+- Validation, testing, and deployment
+- Production patterns for scale
+
+## Express 5 Changes You Should Know
+
+Express 5 introduces routing and parsing changes. Examples:
+
+- Wildcard routes require a name (for example `/*splat`).
+- The query parser defaults to `simple` (no nested objects).
+- `express.urlencoded()` defaults to `extended: false`.
+
+You will see these changes in the routing and request chapters.
+
+## Suggested Architecture (High Level)
+
+- Keep controllers thin and move logic into services.
+- Keep database access in a dedicated data layer.
+- Use middleware for cross-cutting concerns.
+
+## Production Mindset
+
+From day one:
+
+- Validate inputs.
+- Log with request IDs.
+- Keep secrets out of code.
+- Use LTS Node in production.
+
+## Request Lifecycle (Express View)
+
+Understanding the request path helps you design predictable APIs.
+
+```
+Request
+  -> global middleware
+  -> router-level middleware
+  -> route handler
+  -> response
+  -> error handler (if thrown)
+```
+
+## Typical API Layers
+
+Most production Express apps follow this separation:
+
+- Routes: define HTTP endpoints and bind middleware.
+- Controllers: map HTTP to service calls.
+- Services: implement business logic.
+- Data layer: database and external APIs.
+
+## Common Pitfalls
+
+- Blocking the event loop with CPU-heavy work.
+- Mixing DB queries directly in route handlers.
+- Returning inconsistent response shapes across endpoints.
+
+## Checklist
+
+- Node LTS installed
+- TypeScript configured
+- Basic health endpoint
+- Centralized error handler
 
 ---
 
-## 1. What is Node.js?
-
-Node.js is a **JavaScript runtime environment**. Before Node.js, JavaScript could only be run in web browsers. Node.js allows you to run JavaScript code on a server, giving you the ability to build backend applications, APIs, command-line tools, and more.
-
--   **Asynchronous and Event-Driven**: Node.js is built on a non-blocking, event-driven architecture, which makes it incredibly efficient for handling many concurrent connections, a common scenario in web applications.
--   **NPM (Node Package Manager)**: Node.js comes with `npm`, the world's largest software registry. It gives you access to hundreds of thousands of open-source libraries and tools.
-
-## 2. What is Express.js?
-
-While Node.js provides the core capabilities to build a server (like its `http` module), it is very low-level. **Express.js** is a minimalist web framework that runs *on top of* Node.js, providing a robust set of features to make web application development faster and easier.
-
-Think of it this way:
--   **Node.js is the engine.**
--   **Express.js is the car built around that engine.** It provides the steering wheel, seats, and chassis (routing, middleware, etc.) that make the engine useful for a specific purpose.
-
-Express provides essential features like:
--   **Routing**: A system to map incoming URLs to handler functions.
--   **Middleware**: A pipeline to process requests and responses.
--   **Request/Response Helpers**: Simplifies reading request data and sending responses.
-
-## 3. Why Use TypeScript?
-
-**TypeScript** is a superset of JavaScript that adds **static types**. While standard Express applications are written in JavaScript, using TypeScript for backend development has become the professional standard for building serious applications.
-
--   **Type Safety**: Catches common errors during development, before your code ever runs. This prevents a huge class of bugs related to incorrect data types.
--   **Improved Readability and Maintainability**: Types act as documentation, making your code easier to understand and refactor.
--   **Better Developer Experience**: Provides excellent autocompletion, code navigation, and refactoring tools in modern code editors.
--   **Scalability**: Makes it much easier to manage large and complex codebases by providing a clear structure and contract for your functions and objects.
-
-In this guide, we will use TypeScript exclusively to build our Express.js API, ensuring we are following modern best practices.
-
-## This Guide's Focus
-
-1.  **Part 1: Fundamentals**: We'll start with setting up Node.js, npm, and TypeScript, and review modern JavaScript features.
-2.  **Part 2: Building with Express**: We'll cover the core concepts of Express, including routing, middleware, and error handling.
-3.  **Part 3: Building a CRUD API**: We'll connect to a database using Prisma (a modern ORM) and build a complete API.
-4.  **Part 4: Advanced Topics**: We will cover authentication, testing, and deployment.
-
-Let's get started by setting up the development environment.
+[Previous: Index](./README.md) | [Back to Index](./README.md) | [Next: Setup ->](./02-setup-node-npm-and-typescript.md)
