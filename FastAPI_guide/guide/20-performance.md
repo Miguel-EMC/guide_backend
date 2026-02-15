@@ -61,6 +61,16 @@ Reduce response sizes:
 - Exclude unused fields in response models
 - Enable compression at the gateway
 
+### GZip Compression (App-Level)
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
+
+app = FastAPI()
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+```
+
 ## Concurrency and Workers
 
 Use multiple workers for CPU-bound workloads and to utilize multiple cores.
@@ -85,12 +95,19 @@ Validate performance under expected traffic.
 - Ramp up gradually
 - Monitor CPU, memory, and DB saturation
 
+Common tools include k6, Locust, and artillery.
+
 ## Best Practices
 
 - Measure before optimizing
 - Fix database bottlenecks first
 - Avoid unnecessary serialization work
 - Cache aggressively for hot paths
+
+## References
+
+- [FastAPI GZip Middleware](https://fastapi.tiangolo.com/tutorial/middleware/#gzipmiddleware)
+- [Starlette Performance](https://www.starlette.io/performance/)
 
 ## Next Steps
 

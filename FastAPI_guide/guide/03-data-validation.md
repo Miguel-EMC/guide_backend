@@ -110,6 +110,8 @@ class Signup(BaseModel):
         return self
 ```
 
+Note: In Pydantic v2, use `field_validator` and `model_validator` instead of the v1 `validator` and `root_validator`.
+
 ## Nested and Recursive Models
 
 ```python

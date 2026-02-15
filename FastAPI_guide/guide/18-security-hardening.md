@@ -28,7 +28,7 @@ Serve only over HTTPS in production. Add security headers to reduce common attac
 | `Referrer-Policy` | Limit referrer leakage | Use `no-referrer` or `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | Restrict browser features | Disable unused features |
 
-Note: `X-Frame-Options` is obsolete for modern browsers; prefer CSP `frame-ancestors`.
+Note: Prefer CSP `frame-ancestors`. You can still add `X-Frame-Options` for legacy browser support.
 
 ### Security Headers Middleware
 

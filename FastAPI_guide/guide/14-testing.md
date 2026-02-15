@@ -75,6 +75,7 @@ python_files = test_*.py
 python_functions = test_*
 asyncio_mode = auto
 asyncio_default_fixture_loop_scope = function
+asyncio_default_test_loop_scope = function
 filterwarnings =
     ignore::DeprecationWarning
 ```
@@ -83,6 +84,7 @@ filterwarnings =
 
 - `asyncio_mode = auto` lets you use `async def` tests and async fixtures without extra markers.
 - If you omit `asyncio_mode`, pytest-asyncio defaults to `strict` and you should mark async tests with `@pytest.mark.asyncio`.
+- Set both default loop scopes to `function` to prevent event-loop reuse across tests. Future pytest-asyncio defaults are moving in this direction.
 
 ### Option B: AnyIO plugin (used in FastAPI async tests docs)
 
@@ -772,7 +774,7 @@ TOTAL                      90      5    94%
 - [Starlette TestClient](https://starlette.dev/testclient/)
 - [Starlette Lifespan](https://www.starlette.dev/lifespan/)
 - [HTTPX ASGI Transport](https://www.python-httpx.org/advanced/transports/)
-- [pytest-asyncio Configuration](https://pytest-asyncio.readthedocs.io/en/v1.1.1/reference/configuration.html)
+- [pytest-asyncio Configuration](https://pytest-asyncio.readthedocs.io/en/latest/reference/configuration.html)
 - [AnyIO Testing](https://anyio.readthedocs.io/en/stable/testing.html)
 - [asgi-lifespan](https://github.com/florimondmanca/asgi-lifespan)
 

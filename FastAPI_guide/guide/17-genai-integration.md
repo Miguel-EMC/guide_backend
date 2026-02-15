@@ -106,7 +106,7 @@ async def chat(
 
 ## Streaming (SSE)
 
-Streaming with the Responses API emits semantic events. Common ones to listen for are `response.created`, `response.output_text.delta`, `response.completed`, and `error`.
+Streaming with the Responses API emits semantic events. Common ones to listen for are `response.created`, `response.output_text.delta`, `response.output_text.done`, `response.completed`, and `error`.
 
 ```python
 import json

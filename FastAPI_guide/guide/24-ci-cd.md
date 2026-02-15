@@ -7,6 +7,7 @@ This chapter provides a pragmatic CI/CD setup for FastAPI using GitHub Actions a
 - Reproducible installs
 - Automated linting and tests
 - Safe deploys with migrations
+- Fast feedback on every PR
 
 ## Example GitHub Actions Workflow
 
@@ -32,6 +33,13 @@ jobs:
       - name: Install uv
         run: pip install uv
 
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
+          restore-keys: ${{ runner.os }}-uv-
+
       - name: Install dependencies
         run: uv sync
 
@@ -53,6 +61,11 @@ jobs:
 - Store secrets in the CI provider
 - Use separate environments for staging and production
 - Rotate credentials regularly
+
+## References
+
+- [GitHub Actions](https://docs.github.com/actions)
+- [uv Documentation](https://docs.astral.sh/uv/)
 
 ## Next Steps
 
