@@ -1,24 +1,33 @@
 # Role-Based Access Control (RBAC)
 
-This guide covers user roles, permissions, route protection, and admin functionality in FastAPI.
+This guide covers role and permission modeling, policy checks, resource ownership, multi-tenancy scoping, and advanced patterns for production-grade authorization in FastAPI.
 
-## What is RBAC?
-
-Role-Based Access Control restricts system access based on user roles.
+## RBAC Concepts
 
 | Concept | Description |
 |---------|-------------|
-| **Role** | A named collection of permissions (admin, user, moderator) |
-| **Permission** | A specific action allowed (read, write, delete) |
-| **Resource** | What the permission applies to (users, posts, settings) |
+| Role | A named collection of permissions (admin, editor, viewer) |
+| Permission | A specific action (user:read, post:delete) |
+| Resource | What the permission applies to (users, posts, settings) |
+| Policy | A rule that decides access for a specific context |
 
-## Basic Role Implementation
+## RBAC vs ABAC vs PBAC
 
-### User Model with Roles
+| Model | Best For | Tradeoff |
+|-------|----------|----------|
+| RBAC | Simple orgs and clear job roles | Coarse for complex rules |
+| ABAC | Rules based on attributes (team, plan, region) | More complex to reason about |
+| PBAC | Central policy engine | Extra infra and integration |
+
+## Data Modeling Options
+
+### Option A: Simple Role Column
+
+Good for small apps with a small number of roles.
 
 ```python
 from enum import Enum
-from sqlalchemy import String, Integer
+from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -39,446 +48,283 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
 ```
 
-### Schemas
+### Option B: Roles + Permissions (Many-to-Many)
+
+Good for larger apps with flexible permissions.
 
 ```python
-from pydantic import BaseModel, EmailStr
-from app.models.user import UserRole
+from sqlalchemy import Table, Column, ForeignKey, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from app.core.database import Base
+
+role_permissions = Table(
+    "role_permissions",
+    Base.metadata,
+    Column("role_id", ForeignKey("roles.id"), primary_key=True),
+    Column("permission_id", ForeignKey("permissions.id"), primary_key=True),
+)
+
+user_roles = Table(
+    "user_roles",
+    Base.metadata,
+    Column("user_id", ForeignKey("users.id"), primary_key=True),
+    Column("role_id", ForeignKey("roles.id"), primary_key=True),
+)
 
 
-class UserResponse(BaseModel):
-    id: int
-    email: str
-    role: UserRole
-    is_active: bool
+class Role(Base):
+    __tablename__ = "roles"
 
-    model_config = {"from_attributes": True}
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True)
+    permissions = relationship("Permission", secondary=role_permissions)
+
+
+class Permission(Base):
+    __tablename__ = "permissions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(100), unique=True)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(100), unique=True)
+    hashed_password: Mapped[str] = mapped_column(String(200))
+    roles = relationship("Role", secondary=user_roles)
 ```
 
-## Role-Based Dependencies
+## Permission Resolution
 
-### Basic Role Check
+Compute permissions once per request and reuse them across dependencies.
 
 ```python
-from fastapi import Depends, HTTPException, status
-from app.core.security import get_current_user
-from app.models.user import UserRole
+from functools import lru_cache
+from typing import Iterable
 
 
-def require_role(required_role: UserRole):
-    """Dependency factory for role checking."""
-    def role_checker(current_user = Depends(get_current_user)):
-        if current_user.role != required_role:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Role '{required_role}' required"
-            )
-        return current_user
-    return role_checker
-
-
-# Usage
-@app.get("/admin/dashboard")
-def admin_dashboard(user = Depends(require_role(UserRole.ADMIN))):
-    return {"message": "Welcome, Admin!"}
+def resolve_permissions(roles: Iterable[Role]) -> set[str]:
+    perms: set[str] = set()
+    for role in roles:
+        for perm in role.permissions:
+            perms.add(perm.code)
+    return perms
 ```
 
-### Multiple Roles Allowed
-
-```python
-from typing import List
-
-
-def require_roles(allowed_roles: List[UserRole]):
-    """Allow multiple roles to access a route."""
-    def role_checker(current_user = Depends(get_current_user)):
-        if current_user.role not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions"
-            )
-        return current_user
-    return role_checker
-
-
-# Usage: Allow both admin and moderator
-@app.delete("/posts/{post_id}")
-def delete_post(
-    post_id: int,
-    user = Depends(require_roles([UserRole.ADMIN, UserRole.MODERATOR]))
-):
-    return {"message": f"Post {post_id} deleted"}
-```
-
-### Role Hierarchy
-
-```python
-ROLE_HIERARCHY = {
-    UserRole.ADMIN: 3,
-    UserRole.MODERATOR: 2,
-    UserRole.USER: 1,
-}
-
-
-def require_minimum_role(minimum_role: UserRole):
-    """User must have at least this role level."""
-    def role_checker(current_user = Depends(get_current_user)):
-        user_level = ROLE_HIERARCHY.get(current_user.role, 0)
-        required_level = ROLE_HIERARCHY.get(minimum_role, 0)
-
-        if user_level < required_level:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient role level"
-            )
-        return current_user
-    return role_checker
-
-
-# Admin and Moderator can access
-@app.get("/reports")
-def get_reports(user = Depends(require_minimum_role(UserRole.MODERATOR))):
-    return {"reports": []}
-```
-
-## Permission-Based Access
-
-For fine-grained control, use permissions instead of just roles.
-
-### Permission Model
-
-```python
-from enum import Enum
-
-
-class Permission(str, Enum):
-    # Users
-    USER_READ = "user:read"
-    USER_CREATE = "user:create"
-    USER_UPDATE = "user:update"
-    USER_DELETE = "user:delete"
-
-    # Posts
-    POST_READ = "post:read"
-    POST_CREATE = "post:create"
-    POST_UPDATE = "post:update"
-    POST_DELETE = "post:delete"
-
-    # Admin
-    ADMIN_ACCESS = "admin:access"
-
-
-# Role to permissions mapping
-ROLE_PERMISSIONS = {
-    UserRole.ADMIN: [p for p in Permission],  # All permissions
-    UserRole.MODERATOR: [
-        Permission.USER_READ,
-        Permission.POST_READ,
-        Permission.POST_CREATE,
-        Permission.POST_UPDATE,
-        Permission.POST_DELETE,
-    ],
-    UserRole.USER: [
-        Permission.USER_READ,
-        Permission.POST_READ,
-        Permission.POST_CREATE,
-    ],
-}
-```
+## Dependency Patterns
 
 ### Permission Dependency
 
 ```python
-def require_permission(permission: Permission):
-    """Check if user has specific permission."""
-    def permission_checker(current_user = Depends(get_current_user)):
-        user_permissions = ROLE_PERMISSIONS.get(current_user.role, [])
+from fastapi import Depends, HTTPException, status
+from app.core.security import get_current_user
 
-        if permission not in user_permissions:
+
+def require_permissions(*required: str):
+    def checker(user = Depends(get_current_user)):
+        user_permissions = getattr(user, "permissions", set())
+        missing = [p for p in required if p not in user_permissions]
+        if missing:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Permission '{permission}' required"
+                detail=f"Missing permissions: {', '.join(missing)}",
             )
-        return current_user
-    return permission_checker
+        return user
+    return checker
 
 
-# Usage
 @app.delete("/users/{user_id}")
-def delete_user(
+async def delete_user(
     user_id: int,
-    current_user = Depends(require_permission(Permission.USER_DELETE))
+    user = Depends(require_permissions("user:delete")),
 ):
     return {"message": f"User {user_id} deleted"}
 ```
 
-### Multiple Permissions
+### Minimum Role Dependency
 
 ```python
-def require_permissions(permissions: List[Permission], require_all: bool = True):
-    """
-    Check multiple permissions.
-    require_all=True: User needs ALL permissions
-    require_all=False: User needs ANY permission
-    """
-    def permission_checker(current_user = Depends(get_current_user)):
-        user_permissions = ROLE_PERMISSIONS.get(current_user.role, [])
+ROLE_HIERARCHY = {
+    "admin": 3,
+    "moderator": 2,
+    "user": 1,
+}
 
-        if require_all:
-            has_permission = all(p in user_permissions for p in permissions)
-        else:
-            has_permission = any(p in user_permissions for p in permissions)
 
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions"
-            )
-        return current_user
-    return permission_checker
+def require_minimum_role(minimum_role: str):
+    def checker(user = Depends(get_current_user)):
+        if ROLE_HIERARCHY.get(user.role, 0) < ROLE_HIERARCHY.get(minimum_role, 0):
+            raise HTTPException(status_code=403, detail="Insufficient role level")
+        return user
+    return checker
 ```
 
-## Resource Ownership
+## OAuth2 Scopes (Built-in FastAPI Support)
 
-Check if user owns the resource they're modifying.
+Scopes map nicely to permissions when you use OAuth2.
 
 ```python
+from fastapi import Security
+from fastapi.security import OAuth2PasswordBearer, SecurityScopes
+
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/auth/token",
+    scopes={"items:read": "Read items", "items:write": "Write items"},
+)
+
+
+async def get_current_user_with_scopes(
+    security_scopes: SecurityScopes,
+    token: str = Depends(oauth2_scheme),
+):
+    user = decode_token(token)
+    token_scopes = set(user.get("scopes", []))
+    required_scopes = set(security_scopes.scopes)
+    if not required_scopes.issubset(token_scopes):
+        raise HTTPException(status_code=403, detail="Not enough scopes")
+    return user
+
+
+@app.get("/items")
+async def read_items(user = Security(get_current_user_with_scopes, scopes=["items:read"])):
+    return []
+```
+
+## Resource Ownership (Object-Level Access)
+
+Always enforce ownership checks for user-owned resources.
+
+```python
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def get_own_post(
     post_id: int,
     current_user = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    """User can only access their own posts (unless admin)."""
     result = await db.execute(select(Post).where(Post.id == post_id))
     post = result.scalar_one_or_none()
 
     if not post:
         raise HTTPException(404, "Post not found")
 
-    # Admins can access any post
-    if current_user.role == UserRole.ADMIN:
+    if current_user.role == "admin":
         return post
 
-    # Regular users can only access their own posts
     if post.author_id != current_user.id:
         raise HTTPException(403, "Not authorized to access this post")
 
     return post
+```
+
+## Query Scoping (Prevent Data Leaks)
+
+Prefer scoping queries so that users can never see rows they do not own.
+
+```python
+def scope_posts(stmt, user):
+    if user.role == "admin":
+        return stmt
+    return stmt.where(Post.author_id == user.id)
 
 
-@app.put("/posts/{post_id}")
-async def update_post(
-    post_id: int,
-    post_data: PostUpdate,
-    post: Post = Depends(get_own_post),
-    db: AsyncSession = Depends(get_db)
+@app.get("/posts")
+async def list_posts(
+    user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    # User owns this post or is admin
-    for field, value in post_data.model_dump(exclude_unset=True).items():
-        setattr(post, field, value)
-    await db.commit()
-    return post
+    stmt = scope_posts(select(Post), user)
+    result = await db.execute(stmt)
+    return result.scalars().all()
 ```
 
-## Complete RBAC Module
+## Multi-Tenancy
 
-### security.py
+If your app supports multiple tenants, include `tenant_id` in every table and scope all queries by tenant.
 
 ```python
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import List, Optional
-
-from app.core.config import settings
-from app.core.database import get_db
-from app.models.user import User, UserRole
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
+class TenantScoped:
+    tenant_id: Mapped[int] = mapped_column(index=True)
 
 
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db)
-) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        user_id: int = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-
-    if user is None:
-        raise credentials_exception
-
-    if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
-
-    return user
-
-
-async def get_current_active_admin(
-    current_user: User = Depends(get_current_user)
-) -> User:
-    if current_user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
-    return current_user
-
-
-class RoleChecker:
-    """Reusable role checker class."""
-
-    def __init__(self, allowed_roles: List[UserRole]):
-        self.allowed_roles = allowed_roles
-
-    def __call__(self, user: User = Depends(get_current_user)) -> User:
-        if user.role not in self.allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions"
-            )
-        return user
-
-
-# Pre-configured role checkers
-allow_admin = RoleChecker([UserRole.ADMIN])
-allow_moderator = RoleChecker([UserRole.ADMIN, UserRole.MODERATOR])
-allow_authenticated = RoleChecker([UserRole.ADMIN, UserRole.MODERATOR, UserRole.USER])
+async def scope_tenant(stmt, user):
+    return stmt.where(Model.tenant_id == user.tenant_id)
 ```
 
-### router.py
+## Policy Layer (Simple PBAC)
+
+Centralize complex rules in a policy registry.
 
 ```python
-from fastapi import APIRouter, Depends
-from app.core.security import (
-    get_current_user,
-    get_current_active_admin,
-    allow_admin,
-    allow_moderator
+POLICIES = {
+    "post:delete": lambda user, post: user.role == "admin" or post.author_id == user.id,
+    "post:update": lambda user, post: post.is_locked is False,
+}
+
+
+def enforce(policy: str, user, resource):
+    allowed = POLICIES.get(policy, lambda *_: False)(user, resource)
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access denied")
+```
+
+## JWT Claims vs Database Checks
+
+| Strategy | Benefit | Risk |
+|----------|---------|------|
+| Embed roles/permissions in token | Fewer DB calls | Token invalidation is harder |
+| Always load from DB | Real-time changes | More database load |
+
+A common approach is to include roles in the token and still query the DB for sensitive endpoints.
+
+## Audit Logging
+
+Log authorization decisions for compliance and incident response.
+
+```python
+logger.info(
+    "authz_decision",
+    user_id=current_user.id,
+    action="post:delete",
+    resource_id=post.id,
+    allowed=True,
 )
-
-router = APIRouter(prefix="/admin", tags=["Admin"])
-
-
-@router.get("/users")
-async def list_users(admin = Depends(get_current_active_admin)):
-    """Only admins can list all users."""
-    return {"users": []}
-
-
-@router.get("/stats")
-async def get_stats(user = Depends(allow_moderator)):
-    """Admins and moderators can view stats."""
-    return {"stats": {}}
-
-
-@router.delete("/users/{user_id}")
-async def delete_user(user_id: int, admin = Depends(allow_admin)):
-    """Only admins can delete users."""
-    return {"message": f"User {user_id} deleted"}
 ```
 
-## Database-Stored Permissions
-
-For complex applications, store permissions in the database.
+## Testing RBAC
 
 ```python
-# models.py
-class Permission(Base):
-    __tablename__ = "permissions"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(50), unique=True)
-    description: Mapped[str] = mapped_column(String(200))
+import pytest
 
 
-class RolePermission(Base):
-    __tablename__ = "role_permissions"
-
-    role: Mapped[str] = mapped_column(String(20), primary_key=True)
-    permission_id: Mapped[int] = mapped_column(
-        ForeignKey("permissions.id"),
-        primary_key=True
-    )
+@pytest.mark.parametrize("role,expected", [
+    ("admin", 200),
+    ("moderator", 403),
+    ("user", 403),
+])
+def test_admin_only_endpoint(client, role, expected, make_user_with_role):
+    user = make_user_with_role(role)
+    token = login_as(user)
+    response = client.get("/admin", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == expected
 ```
 
 ## Best Practices
 
-### Security
-
-| Practice | Description |
-|----------|-------------|
-| Principle of least privilege | Give minimum required permissions |
-| Defense in depth | Check permissions at multiple layers |
-| Audit logging | Log all permission checks |
-| Regular review | Periodically review role assignments |
-
-### Implementation
-
-```python
-# Good: Specific permissions
-@app.delete("/posts/{id}")
-def delete_post(user = Depends(require_permission(Permission.POST_DELETE))):
-    ...
-
-# Bad: Too broad
-@app.delete("/posts/{id}")
-def delete_post(user = Depends(get_current_user)):  # No permission check!
-    ...
-```
-
-### Testing
-
-```python
-def test_admin_can_delete_user(client, admin_token):
-    response = client.delete(
-        "/admin/users/1",
-        headers={"Authorization": f"Bearer {admin_token}"}
-    )
-    assert response.status_code == 200
-
-
-def test_user_cannot_delete_user(client, user_token):
-    response = client.delete(
-        "/admin/users/1",
-        headers={"Authorization": f"Bearer {user_token}"}
-    )
-    assert response.status_code == 403
-```
-
-## Summary
-
-| Pattern | Use Case |
-|---------|----------|
-| Role check | Simple role-based access |
-| Permission check | Fine-grained control |
-| Role hierarchy | Inherited permissions |
-| Resource ownership | User owns resource |
-| Database permissions | Dynamic permission management |
+- Default to least privilege and expand intentionally.
+- Scope all queries at the database layer where possible.
+- Use policy helpers to avoid authorization logic scattered across routes.
+- Cache permissions per request, not globally.
+- Add audit logs for sensitive actions.
 
 ## References
 
-- [FastAPI Security Documentation](https://fastapi.tiangolo.com/tutorial/security/)
+- [FastAPI Security](https://fastapi.tiangolo.com/tutorial/security/)
 - [OWASP Access Control Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Access_Control_Cheat_Sheet.html)
-- [RBAC Wikipedia](https://en.wikipedia.org/wiki/Role-based_access_control)
 
 ## Next Steps
 

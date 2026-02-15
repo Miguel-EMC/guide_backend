@@ -1,513 +1,282 @@
-# Project Architecture & Advanced Patterns
+# Project Architecture and Advanced Patterns
 
-This guide covers async/sync patterns, middleware, CORS, background tasks, logging, caching, and production architecture.
+This guide covers app factories, configuration, dependency boundaries, concurrency, middleware, background work, observability, resilience, caching, rate limiting, and API versioning.
 
-## Async vs Sync
+## App Factory and Settings
 
-Understanding when to use async is crucial for FastAPI performance.
-
-### The Golden Rule
-
-| Task Type | Use | Example |
-|-----------|-----|---------|
-| **I/O Bound** | `async def` | Database, HTTP requests, file I/O |
-| **CPU Bound** | `def` (sync) | Image processing, calculations |
-| **Blocking Libraries** | `def` (sync) | Some database drivers |
-
-### How FastAPI Handles Routes
+Use an app factory to keep setup explicit and testable.
 
 ```python
-# Async route: runs in the main event loop
-@app.get("/async")
-async def async_route():
-    await some_async_operation()  # Non-blocking
-    return {"type": "async"}
+from fastapi import FastAPI
+from pydantic_settings import BaseSettings
 
-# Sync route: runs in a thread pool
-@app.get("/sync")
-def sync_route():
-    some_blocking_operation()  # Runs in separate thread
-    return {"type": "sync"}
+
+class Settings(BaseSettings):
+    app_name: str = "FastAPI App"
+    debug: bool = False
+    database_url: str
+
+
+settings = Settings()
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title=settings.app_name, debug=settings.debug)
+    register_routers(app)
+    register_middleware(app)
+    return app
+
+
+app = create_app()
 ```
 
-### Common Mistakes
+## Dependency Boundaries
+
+Keep business logic out of routes. Routes should orchestrate dependencies.
 
 ```python
-# BAD: Blocking call in async function
-@app.get("/bad")
-async def bad_route():
-    time.sleep(5)  # BLOCKS THE ENTIRE EVENT LOOP!
-    return {"status": "done"}
+from fastapi import Depends
 
-# GOOD: Use async sleep
-@app.get("/good")
-async def good_route():
-    await asyncio.sleep(5)  # Non-blocking
-    return {"status": "done"}
 
-# GOOD: Use sync function for blocking operations
-@app.get("/also-good")
-def sync_route():
-    time.sleep(5)  # Runs in thread pool, doesn't block
-    return {"status": "done"}
+class UserService:
+    def __init__(self, repo):
+        self.repo = repo
+
+    async def get_user(self, user_id: int):
+        return await self.repo.get(user_id)
+
+
+def get_user_service(db = Depends(get_db)) -> UserService:
+    return UserService(UserRepository(db))
+
+
+@app.get("/users/{user_id}")
+async def read_user(user_id: int, service: UserService = Depends(get_user_service)):
+    return await service.get_user(user_id)
 ```
 
-### When to Use Each
+## Async vs Sync Boundaries
+
+Avoid blocking the event loop. Use threads for sync libraries.
 
 ```python
 import asyncio
+
+
+@app.get("/report")
+async def generate_report():
+    result = await asyncio.to_thread(generate_report_sync)
+    return {"status": "ok", "result": result}
+```
+
+Parallelize I/O with TaskGroup when safe.
+
+```python
+import asyncio
+
+
+@app.get("/dashboard")
+async def dashboard():
+    async with asyncio.TaskGroup() as tg:
+        user_task = tg.create_task(fetch_user())
+        metrics_task = tg.create_task(fetch_metrics())
+    return {"user": user_task.result(), "metrics": metrics_task.result()}
+```
+
+## Lifespan and Shared Resources
+
+Create and dispose long-lived resources once per process.
+
+```python
+from contextlib import asynccontextmanager
 import httpx
-from sqlalchemy.ext.asyncio import AsyncSession
 
-# I/O Bound: Use async
-@app.get("/fetch-data")
-async def fetch_external_data():
-    async with httpx.AsyncClient() as client:
-        response = await client.get("https://api.example.com/data")
-    return response.json()
 
-# Database with async driver: Use async
-@app.get("/users")
-async def get_users(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User))
-    return result.scalars().all()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.http = httpx.AsyncClient(timeout=10.0)
+    yield
+    await app.state.http.aclose()
 
-# CPU Bound: Use sync (or offload to worker)
-@app.post("/process-image")
-def process_image(file: UploadFile):
-    # CPU-intensive work runs in thread pool
-    image_data = process_heavy_computation(file)
-    return {"processed": True}
+
+app = FastAPI(lifespan=lifespan)
 ```
 
-### CPU-Bound Tasks with Workers
+## Middleware vs Dependencies
 
-For heavy CPU tasks, use background workers:
-
-```python
-from celery import Celery
-
-celery_app = Celery("tasks", broker="redis://localhost:6379")
-
-@celery_app.task
-def heavy_computation(data):
-    # Runs in separate Celery worker process
-    result = perform_expensive_calculation(data)
-    return result
-
-@app.post("/compute")
-async def compute(data: dict):
-    task = heavy_computation.delay(data)
-    return {"task_id": task.id}
-```
-
-## Middleware
-
-Middleware runs before/after every request.
-
-### Basic Middleware
+Use middleware for cross-cutting concerns and dependencies for request-scoped needs.
 
 ```python
-from fastapi import FastAPI, Request
+from fastapi import Request
 import time
 
-app = FastAPI()
 
 @app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    start_time = time.time()
+async def add_process_time(request: Request, call_next):
+    start = time.time()
     response = await call_next(request)
-    process_time = time.time() - start_time
-    response.headers["X-Process-Time"] = str(process_time)
+    response.headers["X-Process-Time"] = str(time.time() - start)
     return response
 ```
 
-### Logging Middleware
+## Background Tasks vs Worker Queues
 
-```python
-import logging
-from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
-
-logger = logging.getLogger(__name__)
-
-class LoggingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        logger.info(f"Request: {request.method} {request.url}")
-
-        response = await call_next(request)
-
-        logger.info(f"Response: {response.status_code}")
-        return response
-
-app.add_middleware(LoggingMiddleware)
-```
-
-### Request ID Middleware
-
-```python
-import uuid
-from starlette.middleware.base import BaseHTTPMiddleware
-
-class RequestIDMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        request_id = str(uuid.uuid4())
-        request.state.request_id = request_id
-
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-
-        return response
-```
-
-## CORS Configuration
-
-Cross-Origin Resource Sharing for frontend access.
-
-```python
-from fastapi.middleware.cors import CORSMiddleware
-
-app = FastAPI()
-
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",      # React dev
-        "https://myapp.com",          # Production
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],              # Or ["GET", "POST", "PUT", "DELETE"]
-    allow_headers=["*"],
-    expose_headers=["X-Request-ID"],
-)
-```
-
-### CORS Options
-
-| Option | Description | Example |
-|--------|-------------|---------|
-| `allow_origins` | Allowed origin URLs | `["https://example.com"]` |
-| `allow_credentials` | Allow cookies/auth | `True` |
-| `allow_methods` | Allowed HTTP methods | `["GET", "POST"]` |
-| `allow_headers` | Allowed request headers | `["Authorization"]` |
-| `expose_headers` | Headers client can access | `["X-Custom"]` |
-| `max_age` | Preflight cache duration | `600` |
-
-## Background Tasks
-
-Run tasks after returning response.
-
-### Simple Background Task
+`BackgroundTasks` is lightweight and tied to the request lifecycle. For durable jobs, use a queue.
 
 ```python
 from fastapi import BackgroundTasks
 
-def send_email(email: str, message: str):
-    # Simulated email sending
-    print(f"Sending email to {email}: {message}")
+
+def send_email(email: str):
+    pass
+
 
 @app.post("/register")
-async def register(
-    email: str,
-    background_tasks: BackgroundTasks
-):
-    # User registration logic...
-
-    # Schedule email to send after response
-    background_tasks.add_task(send_email, email, "Welcome!")
-
-    return {"message": "User registered"}
+async def register(email: str, background_tasks: BackgroundTasks):
+    background_tasks.add_task(send_email, email)
+    return {"ok": True}
 ```
 
-### Multiple Background Tasks
+Use Celery, RQ, or Dramatiq for long or retryable jobs.
 
-```python
-@app.post("/order")
-async def create_order(
-    order: OrderCreate,
-    background_tasks: BackgroundTasks
-):
-    # Create order...
+## Caching
 
-    background_tasks.add_task(send_confirmation_email, order.email)
-    background_tasks.add_task(notify_warehouse, order.id)
-    background_tasks.add_task(update_analytics, "new_order")
-
-    return {"order_id": order.id}
-```
-
-### When to Use What
-
-| Task | Solution |
-|------|----------|
-| Send email after response | `BackgroundTasks` |
-| Quick notifications | `BackgroundTasks` |
-| Heavy processing (>30s) | Celery/RQ |
-| Scheduled tasks | Celery Beat |
-| Long-running jobs | Celery workers |
-
-## Structured Logging
-
-Production-ready logging setup.
-
-### Basic Configuration
-
-```python
-import logging
-import sys
-
-def setup_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
-
-setup_logging()
-logger = logging.getLogger(__name__)
-```
-
-### JSON Logging (Production)
+Cache read-heavy data in Redis to reduce DB load.
 
 ```python
 import json
-import logging
-from datetime import datetime
 
-class JSONFormatter(logging.Formatter):
-    def format(self, record):
-        log_data = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "level": record.levelname,
-            "message": record.getMessage(),
-            "module": record.module,
-            "function": record.funcName,
-        }
-        if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
-        return json.dumps(log_data)
 
-# Setup
-handler = logging.StreamHandler()
-handler.setFormatter(JSONFormatter())
-logger = logging.getLogger(__name__)
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+@app.get("/config")
+async def get_config():
+    cached = await redis.get("config")
+    if cached:
+        return json.loads(cached)
+
+    data = await load_config_from_db()
+    await redis.set("config", json.dumps(data), ex=300)
+    return data
 ```
 
-### Using structlog (Recommended)
+## Resilience: Timeouts and Retries
 
-```bash
-pip install structlog
+```python
+import httpx
+from tenacity import retry, stop_after_attempt, wait_exponential
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8))
+async def call_service(url: str):
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.json()
 ```
+
+## Rate Limiting
+
+```python
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+
+
+@app.get("/api/resource")
+@limiter.limit("5/minute")
+async def get_resource(request: Request):
+    return {"data": "limited"}
+```
+
+## Observability
+
+### Structured Logs
 
 ```python
 import structlog
 
 structlog.configure(
     processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.JSONRenderer()
-    ],
-    wrapper_class=structlog.stdlib.BoundLogger,
-    context_class=dict,
-    logger_factory=structlog.stdlib.LoggerFactory(),
+        structlog.processors.JSONRenderer(),
+    ]
 )
 
 logger = structlog.get_logger()
-
-@app.get("/users/{user_id}")
-async def get_user(user_id: int):
-    logger.info("fetching_user", user_id=user_id)
-    # ...
+logger.info("api_started")
 ```
 
-## Rate Limiting
+### Tracing and Metrics
 
-Protect your API from abuse.
+Use OpenTelemetry for distributed tracing and Prometheus for metrics.
 
-```bash
-pip install slowapi
-```
+## CORS
 
 ```python
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+from fastapi.middleware.cors import CORSMiddleware
 
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-@app.get("/api/resource")
-@limiter.limit("5/minute")
-async def get_resource(request: Request):
-    return {"data": "limited resource"}
-
-@app.post("/api/expensive")
-@limiter.limit("1/minute")
-async def expensive_operation(request: Request):
-    return {"status": "done"}
-```
-
-## Caching
-
-Improve performance with caching.
-
-### In-Memory Cache (Simple)
-
-```python
-from functools import lru_cache
-from cachetools import TTLCache
-
-# TTL Cache (expires after time)
-cache = TTLCache(maxsize=100, ttl=300)  # 5 minutes
-
-@app.get("/config")
-async def get_config():
-    if "config" not in cache:
-        cache["config"] = load_config_from_db()
-    return cache["config"]
-```
-
-### Redis Cache (Production)
-
-```bash
-pip install redis
-```
-
-```python
-import redis
-import json
-
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
-
-async def get_cached_user(user_id: int):
-    cache_key = f"user:{user_id}"
-
-    # Try cache first
-    cached = redis_client.get(cache_key)
-    if cached:
-        return json.loads(cached)
-
-    # Fetch from database
-    user = await fetch_user_from_db(user_id)
-
-    # Store in cache (expire in 1 hour)
-    redis_client.setex(cache_key, 3600, json.dumps(user))
-
-    return user
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://myapp.com", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 ```
 
 ## API Versioning
 
-### URL Path Versioning
-
 ```python
 from fastapi import APIRouter
 
-v1_router = APIRouter(prefix="/api/v1")
-v2_router = APIRouter(prefix="/api/v2")
+v1 = APIRouter(prefix="/api/v1")
+v2 = APIRouter(prefix="/api/v2")
 
-@v1_router.get("/users")
-def get_users_v1():
-    return {"version": "1", "users": []}
 
-@v2_router.get("/users")
-def get_users_v2():
-    return {"version": "2", "users": [], "pagination": {}}
+@v1.get("/users")
+async def users_v1():
+    return {"version": "1"}
 
-app.include_router(v1_router)
-app.include_router(v2_router)
+
+@v2.get("/users")
+async def users_v2():
+    return {"version": "2"}
 ```
 
-### Header Versioning
-
-```python
-from fastapi import Header, HTTPException
-
-@app.get("/users")
-async def get_users(api_version: str = Header(default="1")):
-    if api_version == "1":
-        return {"users": []}
-    elif api_version == "2":
-        return {"users": [], "meta": {}}
-    else:
-        raise HTTPException(400, "Unsupported API version")
-```
-
-## Production Project Structure
+## Production Structure
 
 ```
 project/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py                 # FastAPI app instance
+│   ├── main.py
 │   ├── core/
-│   │   ├── __init__.py
-│   │   ├── config.py           # Settings
-│   │   ├── database.py         # DB connection
-│   │   ├── security.py         # Auth utilities
-│   │   └── logging.py          # Logging setup
 │   ├── middleware/
-│   │   ├── __init__.py
-│   │   ├── logging.py
-│   │   └── request_id.py
-│   ├── modules/
-│   │   ├── auth/
-│   │   │   ├── __init__.py
-│   │   │   ├── router.py
-│   │   │   ├── schemas.py
-│   │   │   ├── service.py
-│   │   │   └── models.py
-│   │   └── users/
-│   │       ├── __init__.py
-│   │       ├── router.py
-│   │       ├── schemas.py
-│   │       ├── service.py
-│   │       └── models.py
-│   └── utils/
-│       ├── __init__.py
-│       └── helpers.py
+│   ├── routers/
+│   ├── services/
+│   ├── repositories/
+│   ├── models/
+│   └── schemas/
 ├── tests/
-│   ├── __init__.py
-│   ├── conftest.py
-│   └── test_users.py
-├── alembic/                    # Database migrations
-├── .env
-├── .env.example
-├── Dockerfile
-├── docker-compose.yml
-├── pyproject.toml
-└── README.md
+├── alembic/
+└── pyproject.toml
 ```
 
-## Summary
+## Best Practices
 
-| Topic | Key Point |
-|-------|-----------|
-| Async/Sync | Use async for I/O, sync for CPU-bound |
-| Middleware | Process-time, logging, request IDs |
-| CORS | Configure for frontend access |
-| Background Tasks | Post-response processing |
-| Logging | Use structured JSON logging |
-| Rate Limiting | Protect against abuse |
-| Caching | Redis for production |
-| Versioning | URL path is most common |
+- Keep routes thin and move logic into services.
+- Centralize config with environment-based settings.
+- Avoid blocking I/O inside async routes.
+- Prefer shared clients in lifespan over creating new ones per request.
+- Add rate limiting and caching early for public APIs.
+- Ship logs and traces to a centralized backend.
 
 ## References
 
-- [FastAPI Async Documentation](https://fastapi.tiangolo.com/async/)
+- [FastAPI Async](https://fastapi.tiangolo.com/async/)
 - [FastAPI Middleware](https://fastapi.tiangolo.com/tutorial/middleware/)
-- [FastAPI Best Practices - GitHub](https://github.com/zhanymkanov/fastapi-best-practices)
-- [Starlette Middleware](https://www.starlette.io/middleware/)
-- [structlog Documentation](https://www.structlog.org/)
+- [Starlette Middleware](https://www.starlette.dev/middleware/)
+- [FastAPI CORS](https://fastapi.tiangolo.com/tutorial/cors/)
+- [FastAPI Background Tasks](https://fastapi.tiangolo.com/tutorial/background-tasks/)
 
 ## Next Steps
 

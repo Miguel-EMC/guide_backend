@@ -1,507 +1,296 @@
-# Request Bodies & Form Data
+# Request Bodies, Forms, and Files
 
-This guide covers JSON request bodies, form data, file uploads, headers, and cookies in FastAPI.
+This guide covers JSON request bodies, multiple body parameters, form data, file uploads, and how to combine them in FastAPI.
 
 ## Prerequisites
 
-Install required packages:
-
 ```bash
-pip install fastapi uvicorn python-multipart
+# With uv
+uv add "fastapi[standard]"
+uv add python-multipart
+
+# With pip
+pip install "fastapi[standard]" python-multipart
 ```
 
-- `python-multipart` is required for form data and file uploads
+`python-multipart` is required for `Form` and `File` inputs.
 
 ## JSON Request Bodies
 
-FastAPI uses Pydantic models to validate JSON request bodies automatically.
-
-### Basic Example
+FastAPI uses Pydantic models to validate JSON request bodies.
 
 ```python
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import Optional
 
 app = FastAPI()
 
+
 class Item(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     price: float
-    tax: Optional[float] = None
-    tags: list[str] = []
+    tax: float | None = None
+
 
 @app.post("/items/")
 async def create_item(item: Item):
-    item_dict = item.model_dump()
-
-    if item.tax:
-        item_dict["price_with_tax"] = item.price + item.tax
-
-    return item_dict
+    return item
 ```
 
-**Request:**
+FastAPI recommends sending request bodies with `POST`, `PUT`, `PATCH`, or `DELETE`. A body in a `GET` request is discouraged by the HTTP spec (FastAPI supports it for edge cases, but Swagger UI won’t document it).
 
-```bash
-curl -X POST http://localhost:8000/items/ \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Keyboard", "price": 59.99, "tax": 5.50}'
-```
+### Body + Path + Query
 
-### How FastAPI Handles Request Bodies
-
-| Step | Description |
-|------|-------------|
-| 1 | Reads request body as JSON |
-| 2 | Validates against Pydantic model |
-| 3 | Converts to Python object |
-| 4 | Returns 422 if validation fails |
-
-### Nested Models
+FastAPI detects where data comes from based on types and path parameters.
 
 ```python
-class Address(BaseModel):
-    street: str
-    city: str
-    postal_code: str
-    country: str = "USA"
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+
+@app.put("/items/{item_id}")
+async def update_item(item_id: int, item: Item, q: str | None = None):
+    result = {"item_id": item_id, **item.model_dump()}
+    if q:
+        result["q"] = q
+    return result
+```
+
+FastAPI will take path parameters from the URL, singular types as query parameters, and Pydantic models from the body.
+
+## Multiple Body Parameters
+
+You can accept multiple body objects; FastAPI will expect a JSON object keyed by parameter name.
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+
+class Item(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
 
 class User(BaseModel):
     username: str
-    email: str
-    addresses: list[Address]
+    full_name: str | None = None
 
-@app.post("/users/")
-async def create_user(user: User):
-    return user
+
+@app.put("/items/{item_id}")
+async def update_item(item_id: int, item: Item, user: User):
+    return {"item_id": item_id, "item": item, "user": user}
 ```
 
-**Request:**
+Expected JSON:
 
 ```json
 {
-  "username": "johndoe",
-  "email": "john@example.com",
-  "addresses": [
-    {
-      "street": "123 Main St",
-      "city": "New York",
-      "postal_code": "10001"
-    }
-  ]
+  "item": {"name": "Foo", "price": 42.0},
+  "user": {"username": "dave"}
 }
 ```
 
-### Multiple Body Parameters
+
+
+### Singular Values in the Body
+
+Use `Body()` to force a single value into the body instead of query params.
 
 ```python
+from typing import Annotated
+from fastapi import Body, FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+
 class Item(BaseModel):
     name: str
     price: float
 
+
 class User(BaseModel):
     username: str
-    email: str
 
-@app.post("/orders/")
-async def create_order(item: Item, user: User):
-    return {"item": item, "user": user}
+
+@app.put("/items/{item_id}")
+async def update_item(
+    item_id: int,
+    item: Item,
+    user: User,
+    importance: Annotated[int, Body()],
+):
+    return {"item_id": item_id, "item": item, "user": user, "importance": importance}
 ```
 
-**Expected JSON structure:**
 
-```json
-{
-  "item": {"name": "Product", "price": 29.99},
-  "user": {"username": "john", "email": "john@example.com"}
-}
-```
 
-### Embedding Single Body
+### Embed a Single Body Parameter
 
-Use `Body(embed=True)` to wrap a single model:
+By default, a single model is expected at the root. Use `embed=True` to nest it under a key.
 
 ```python
-from fastapi import Body
+from typing import Annotated
+from fastapi import Body, FastAPI
+from pydantic import BaseModel
 
-@app.post("/items/")
-async def create_item(item: Item = Body(embed=True)):
-    return item
+app = FastAPI()
+
+
+class Item(BaseModel):
+    name: str
+    price: float
+
+
+@app.put("/items/{item_id}")
+async def update_item(item_id: int, item: Annotated[Item, Body(embed=True)]):
+    return {"item_id": item_id, "item": item}
 ```
 
-**Expected JSON:**
 
-```json
-{
-  "item": {"name": "Product", "price": 29.99}
-}
-```
 
 ## Form Data
 
-For HTML forms and `multipart/form-data` requests.
-
-### Basic Form
+When the client sends form-encoded data, use `Form`. It requires `python-multipart`.
 
 ```python
+from typing import Annotated
 from fastapi import FastAPI, Form
 
 app = FastAPI()
 
+
 @app.post("/login/")
 async def login(
-    username: str = Form(),
-    password: str = Form()
+    username: Annotated[str, Form()],
+    password: Annotated[str, Form()],
 ):
     return {"username": username}
 ```
 
-**Request:**
+HTML forms use `application/x-www-form-urlencoded`, and forms with files use `multipart/form-data`.
 
-```bash
-curl -X POST http://localhost:8000/login/ \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=johndoe&password=secret"
-```
-
-### Optional Form Fields
-
-```python
-from typing import Optional
-
-@app.post("/profile/")
-async def update_profile(
-    username: str = Form(),
-    full_name: Optional[str] = Form(None),
-    bio: Optional[str] = Form(None)
-):
-    return {
-        "username": username,
-        "full_name": full_name,
-        "bio": bio
-    }
-```
-
-### Form vs JSON
-
-| Feature | Form Data | JSON Body |
-|---------|-----------|-----------|
-| Content-Type | `application/x-www-form-urlencoded` | `application/json` |
-| Declaration | `Form()` | Pydantic model |
-| File upload | Supported | Not supported |
-| Nested data | Manual parsing | Automatic |
+You can declare multiple `Form` parameters, but you cannot combine `Form`/`File` with JSON `Body` in the same request because of the content type.
 
 ## File Uploads
 
-### Single File
+Use `File` for file bodies and `UploadFile` for streaming uploads.
 
 ```python
+from typing import Annotated
 from fastapi import FastAPI, File, UploadFile
 
 app = FastAPI()
 
-@app.post("/upload/")
+
+@app.post("/files/")
+async def upload_bytes(file: Annotated[bytes, File()]):
+    return {"file_size": len(file)}
+
+
+@app.post("/uploadfile/")
 async def upload_file(file: UploadFile):
-    content = await file.read()
-
-    return {
-        "filename": file.filename,
-        "content_type": file.content_type,
-        "size": len(content)
-    }
+    return {"filename": file.filename}
 ```
 
-**Request:**
+If you declare the parameter as `bytes`, FastAPI reads the whole file into memory, which is fine for small files. `UploadFile` uses a spooled file (in-memory up to a limit, then disk) and is better for larger uploads.
 
-```bash
-curl -X POST http://localhost:8000/upload/ \
-  -F "file=@/path/to/file.txt"
-```
-
-### UploadFile Attributes
-
-| Attribute | Description |
-|-----------|-------------|
-| `filename` | Original filename |
-| `content_type` | MIME type |
-| `file` | SpooledTemporaryFile |
-
-### UploadFile Methods
-
-| Method | Description |
-|--------|-------------|
-| `await file.read()` | Read entire content |
-| `await file.read(size)` | Read specific bytes |
-| `await file.seek(offset)` | Move to position |
-| `await file.write(data)` | Write data |
-| `await file.close()` | Close file |
+`UploadFile` exposes metadata like `filename`, `content_type`, and the underlying file object via `file`.
 
 ### Multiple Files
 
 ```python
+from typing import Annotated
+from fastapi import FastAPI, File, UploadFile
+
+app = FastAPI()
+
+
 @app.post("/upload-multiple/")
-async def upload_files(files: list[UploadFile]):
-    return [
-        {
-            "filename": file.filename,
-            "size": len(await file.read())
-        }
-        for file in files
-    ]
+async def upload_multiple(files: Annotated[list[UploadFile], File()]):
+    return {"filenames": [f.filename for f in files]}
 ```
 
-**Request:**
 
-```bash
-curl -X POST http://localhost:8000/upload-multiple/ \
-  -F "files=@file1.txt" \
-  -F "files=@file2.txt"
-```
 
-### File with Form Data
+### Forms + Files
+
+You can combine file and form fields in the same request.
 
 ```python
-@app.post("/upload-with-info/")
-async def upload_with_info(
-    file: UploadFile,
-    description: str = Form(),
-    category: str = Form()
+from typing import Annotated
+from fastapi import FastAPI, File, Form, UploadFile
+
+app = FastAPI()
+
+
+@app.post("/files/")
+async def create_file(
+    file: Annotated[bytes, File()],
+    fileb: Annotated[UploadFile, File()],
+    token: Annotated[str, Form()],
 ):
-    content = await file.read()
     return {
-        "filename": file.filename,
-        "size": len(content),
-        "description": description,
-        "category": category
+        "file_size": len(file),
+        "token": token,
+        "fileb_content_type": fileb.content_type,
     }
 ```
 
-### Save Uploaded File
+These requests are sent as form data and can mix `bytes` and `UploadFile`.
+
+## Saving Uploaded Files (Streaming)
 
 ```python
-import shutil
 from pathlib import Path
+import shutil
+from fastapi import UploadFile
 
-@app.post("/save-file/")
-async def save_file(file: UploadFile):
-    upload_dir = Path("uploads")
-    upload_dir.mkdir(exist_ok=True)
 
-    file_path = upload_dir / file.filename
+async def save_upload(upload_dir: Path, file: UploadFile) -> Path:
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    dest = upload_dir / file.filename
 
-    with open(file_path, "wb") as buffer:
+    with dest.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    return {"saved_to": str(file_path)}
-```
-
-## Headers
-
-### Reading Headers
-
-```python
-from fastapi import Header
-from typing import Optional
-
-@app.get("/headers/")
-async def read_headers(
-    user_agent: Optional[str] = Header(None),
-    x_token: Optional[str] = Header(None),
-    accept_language: Optional[list[str]] = Header(None)
-):
-    return {
-        "User-Agent": user_agent,
-        "X-Token": x_token,
-        "Accept-Language": accept_language
-    }
-```
-
-### Header Name Conversion
-
-| HTTP Header | Python Parameter |
-|-------------|------------------|
-| `User-Agent` | `user_agent` |
-| `Accept-Language` | `accept_language` |
-| `X-Custom-Header` | `x_custom_header` |
-
-To disable conversion:
-
-```python
-x_token: str = Header(None, convert_underscores=False)
-```
-
-### Header Validation
-
-```python
-from fastapi import HTTPException, Depends
-
-async def verify_token(x_token: str = Header()):
-    if x_token != "valid-token":
-        raise HTTPException(status_code=401, detail="Invalid token")
-    return x_token
-
-@app.get("/protected/")
-async def protected_route(token: str = Depends(verify_token)):
-    return {"message": "Access granted"}
-```
-
-## Cookies
-
-### Reading Cookies
-
-```python
-from fastapi import Cookie
-from typing import Optional
-
-@app.get("/cookies/")
-async def read_cookies(
-    session_id: Optional[str] = Cookie(None),
-    preferences: Optional[str] = Cookie(None)
-):
-    return {
-        "session_id": session_id,
-        "preferences": preferences
-    }
-```
-
-### Setting Cookies
-
-```python
-from fastapi import Response
-
-@app.post("/set-cookies/")
-async def set_cookies(response: Response):
-    response.set_cookie(
-        key="session_id",
-        value="abc123",
-        max_age=3600,           # 1 hour
-        httponly=True,          # Not accessible via JS
-        secure=True,            # HTTPS only
-        samesite="lax"          # CSRF protection
-    )
-    return {"message": "Cookie set"}
-```
-
-### Cookie Parameters
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `key` | Cookie name | Required |
-| `value` | Cookie value | Required |
-| `max_age` | Lifetime in seconds | Session |
-| `expires` | Expiration datetime | None |
-| `path` | Valid URL path | `/` |
-| `domain` | Valid domain | Current |
-| `secure` | HTTPS only | False |
-| `httponly` | No JS access | False |
-| `samesite` | `lax`, `strict`, `none` | `lax` |
-
-### Deleting Cookies
-
-```python
-@app.post("/logout/")
-async def logout(response: Response):
-    response.delete_cookie("session_id")
-    return {"message": "Logged out"}
-```
-
-## Combining Parameters
-
-```python
-@app.post("/complete-example/")
-async def complete_example(
-    # Path parameter
-    item_id: int,
-    # Query parameter
-    q: Optional[str] = None,
-    # Form data
-    name: str = Form(),
-    # File upload
-    image: UploadFile = File(...),
-    # Header
-    x_token: str = Header(),
-    # Cookie
-    session_id: Optional[str] = Cookie(None)
-):
-    return {
-        "item_id": item_id,
-        "query": q,
-        "name": name,
-        "image": image.filename,
-        "token": x_token,
-        "session": session_id
-    }
-```
-
-## Parameter Detection Rules
-
-| Declaration | Type |
-|-------------|------|
-| In path `{param}` | Path parameter |
-| `Form()` | Form data |
-| `File()` or `UploadFile` | File upload |
-| `Header()` | HTTP header |
-| `Cookie()` | Cookie |
-| Pydantic model | Request body |
-| Simple type | Query parameter |
-
-## Best Practices
-
-### Security
-
-```python
-# Always validate file types
-ALLOWED_TYPES = {"image/jpeg", "image/png", "application/pdf"}
-
-@app.post("/upload-safe/")
-async def upload_safe(file: UploadFile):
-    if file.content_type not in ALLOWED_TYPES:
-        raise HTTPException(400, "File type not allowed")
-    # Process file...
-```
-
-### File Size Limits
-
-```python
-MAX_SIZE = 5 * 1024 * 1024  # 5MB
-
-@app.post("/upload-limited/")
-async def upload_limited(file: UploadFile):
-    content = await file.read()
-    if len(content) > MAX_SIZE:
-        raise HTTPException(413, "File too large")
-    # Process file...
-```
-
-### Streaming Large Files
-
-```python
-@app.post("/upload-stream/")
-async def upload_stream(file: UploadFile):
-    chunk_size = 1024 * 1024  # 1MB chunks
-
-    with open(f"uploads/{file.filename}", "wb") as buffer:
-        while chunk := await file.read(chunk_size):
-            buffer.write(chunk)
-
-    return {"status": "uploaded"}
+    return dest
 ```
 
 ## Summary
 
-| Data Type | Declaration | Use Case |
-|-----------|-------------|----------|
-| JSON Body | Pydantic model | API data |
-| Form Data | `Form()` | HTML forms |
-| Files | `UploadFile` | File uploads |
-| Headers | `Header()` | Auth tokens |
-| Cookies | `Cookie()` | Sessions |
+| Input Type | Declaration | Content-Type |
+|------------|-------------|--------------|
+| JSON body | Pydantic model | `application/json` |
+| Form fields | `Form()` | `application/x-www-form-urlencoded` |
+| Files | `File()` / `UploadFile` | `multipart/form-data` |
+
+## References
+
+- [Request Body](https://fastapi.tiangolo.com/tutorial/body/)
+- [Body - Multiple Parameters](https://fastapi.tiangolo.com/tutorial/body-multiple-params/)
+- [Form Data](https://fastapi.tiangolo.com/tutorial/request-forms/)
+- [Request Files](https://fastapi.tiangolo.com/tutorial/request-files/)
+- [Request Forms and Files](https://fastapi.tiangolo.com/tutorial/request-forms-and-files/)
 
 ## Next Steps
 
-- [Response Models](./05-response-models.md) - Configure API responses
+- [Response Models](./05-response-models.md) - Configure output data
 - [Error Handling](./06-error-handling.md) - Handle errors gracefully
 
 ---

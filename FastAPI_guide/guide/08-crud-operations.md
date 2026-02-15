@@ -1,17 +1,16 @@
 # CRUD Operations
 
-This guide covers Create, Read, Update, Delete patterns, pagination, and transaction management in FastAPI.
+This guide covers Create, Read, Update, Delete patterns, pagination, filtering, and transaction handling using SQLAlchemy 2.0 async sessions.
 
-## Standard CRUD Pattern
-
-Every resource follows the same pattern:
+## CRUD Blueprint
 
 | Operation | HTTP Method | Route | Status Code |
 |-----------|-------------|-------|-------------|
 | List | GET | `/resources` | 200 |
 | Get One | GET | `/resources/{id}` | 200 |
 | Create | POST | `/resources` | 201 |
-| Update | PUT/PATCH | `/resources/{id}` | 200 |
+| Update (full) | PUT | `/resources/{id}` | 200 |
+| Update (partial) | PATCH | `/resources/{id}` | 200 |
 | Delete | DELETE | `/resources/{id}` | 204 |
 
 ## Project Structure
@@ -19,19 +18,17 @@ Every resource follows the same pattern:
 ```
 app/
 ├── models/
-│   └── book.py          # SQLAlchemy model
+│   └── book.py
 ├── schemas/
-│   └── book.py          # Pydantic schemas
+│   └── book.py
 ├── services/
-│   └── book.py          # Business logic
+│   └── book.py
 ├── routers/
-│   └── book.py          # API routes
+│   └── book.py
 └── main.py
 ```
 
-## Defining Models
-
-### SQLAlchemy Model
+## Models (SQLAlchemy 2.0)
 
 ```python
 # models/book.py
@@ -50,19 +47,18 @@ class Book(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 ```
 
-### Pydantic Schemas
+## Schemas (Pydantic)
 
 ```python
 # schemas/book.py
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
 
 
 class BookBase(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     author: str = Field(min_length=1, max_length=100)
     year: int = Field(ge=0, le=2100)
-    description: Optional[str] = Field(None, max_length=2000)
+    description: str | None = Field(default=None, max_length=2000)
 
 
 class BookCreate(BookBase):
@@ -70,66 +66,53 @@ class BookCreate(BookBase):
 
 
 class BookUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=200)
-    author: Optional[str] = Field(None, min_length=1, max_length=100)
-    year: Optional[int] = Field(None, ge=0, le=2100)
-    description: Optional[str] = None
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    author: str | None = Field(default=None, min_length=1, max_length=100)
+    year: int | None = Field(default=None, ge=0, le=2100)
+    description: str | None = None
 
 
-class BookResponse(BookBase):
+class BookRead(BookBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
 ```
 
-## Service Layer
+## Service Layer (AsyncSession)
 
 ```python
 # services/book.py
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from app.models.book import Book
 from app.schemas.book import BookCreate, BookUpdate
 
 
-async def get_books(
-    db: AsyncSession,
-    skip: int = 0,
-    limit: int = 100
-) -> list[Book]:
-    result = await db.execute(
-        select(Book).offset(skip).limit(limit)
-    )
-    return list(result.scalars().all())
+async def list_books(db: AsyncSession, skip: int = 0, limit: int = 100) -> list[Book]:
+    stmt = select(Book).offset(skip).limit(limit)
+    result = await db.execute(stmt)
+    return result.scalars().all()
 
 
-async def get_book_by_id(db: AsyncSession, book_id: int) -> Book | None:
-    result = await db.execute(
-        select(Book).where(Book.id == book_id)
-    )
-    return result.scalar_one_or_none()
+async def get_book(db: AsyncSession, book_id: int) -> Book | None:
+    return await db.get(Book, book_id)
 
 
-async def create_book(db: AsyncSession, book_data: BookCreate) -> Book:
-    book = Book(**book_data.model_dump())
+async def create_book(db: AsyncSession, payload: BookCreate) -> Book:
+    book = Book(**payload.model_dump())
     db.add(book)
     await db.commit()
     await db.refresh(book)
     return book
 
 
-async def update_book(
-    db: AsyncSession,
-    book_id: int,
-    book_data: BookUpdate
-) -> Book:
-    book = await get_book_by_id(db, book_id)
+async def update_book(db: AsyncSession, book_id: int, payload: BookUpdate) -> Book:
+    book = await get_book(db, book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    # Only update provided fields
-    update_data = book_data.model_dump(exclude_unset=True)
+    update_data = payload.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(book, field, value)
 
@@ -139,7 +122,7 @@ async def update_book(
 
 
 async def delete_book(db: AsyncSession, book_id: int) -> None:
-    book = await get_book_by_id(db, book_id)
+    book = await get_book(db, book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
@@ -151,349 +134,171 @@ async def delete_book(db: AsyncSession, book_id: int) -> None:
 
 ```python
 # routers/book.py
+from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.schemas.book import BookCreate, BookUpdate, BookResponse
-from app.services import book as book_service
+from app.schemas.book import BookCreate, BookUpdate, BookRead
+from app.services import book as service
 
 router = APIRouter(prefix="/books", tags=["Books"])
 
+DbSession = Annotated[AsyncSession, Depends(get_db)]
 
-@router.get("/", response_model=list[BookResponse])
+
+@router.get("/", response_model=list[BookRead])
 async def list_books(
+    db: DbSession,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
-    db: AsyncSession = Depends(get_db)
 ):
-    """List all books with pagination."""
-    return await book_service.get_books(db, skip, limit)
+    return await service.list_books(db, skip, limit)
 
 
-@router.get("/{book_id}", response_model=BookResponse)
-async def get_book(
-    book_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """Get a specific book by ID."""
-    book = await book_service.get_book_by_id(db, book_id)
+@router.get("/{book_id}", response_model=BookRead)
+async def get_book(book_id: int, db: DbSession):
+    book = await service.get_book(db, book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     return book
 
 
-@router.post("/", response_model=BookResponse, status_code=status.HTTP_201_CREATED)
-async def create_book(
-    book: BookCreate,
-    db: AsyncSession = Depends(get_db)
-):
-    """Create a new book."""
-    return await book_service.create_book(db, book)
+@router.post("/", response_model=BookRead, status_code=status.HTTP_201_CREATED)
+async def create_book(payload: BookCreate, db: DbSession):
+    return await service.create_book(db, payload)
 
 
-@router.put("/{book_id}", response_model=BookResponse)
-async def update_book(
-    book_id: int,
-    book: BookUpdate,
-    db: AsyncSession = Depends(get_db)
-):
-    """Update an existing book."""
-    return await book_service.update_book(db, book_id, book)
+@router.patch("/{book_id}", response_model=BookRead)
+async def patch_book(book_id: int, payload: BookUpdate, db: DbSession):
+    return await service.update_book(db, book_id, payload)
 
 
 @router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_book(
-    book_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """Delete a book."""
-    await book_service.delete_book(db, book_id)
+async def delete_book(book_id: int, db: DbSession):
+    await service.delete_book(db, book_id)
 ```
 
-## Pagination
-
-### Basic Pagination
+## Pagination with Total Count
 
 ```python
-@router.get("/")
-async def list_items(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
-    db: AsyncSession = Depends(get_db)
-):
-    result = await db.execute(
-        select(Item).offset(skip).limit(limit)
-    )
-    return result.scalars().all()
-```
-
-### Pagination with Total Count
-
-```python
+from sqlalchemy import func, select
 from pydantic import BaseModel
-from sqlalchemy import func
 
 
-class PaginatedResponse(BaseModel):
-    items: list[BookResponse]
+class Page(BaseModel):
+    items: list[BookRead]
     total: int
     skip: int
     limit: int
 
 
-@router.get("/", response_model=PaginatedResponse)
-async def list_books(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
-    db: AsyncSession = Depends(get_db)
-):
-    # Get total count
-    count_result = await db.execute(select(func.count(Book.id)))
-    total = count_result.scalar()
+async def list_books_with_total(db: AsyncSession, skip: int, limit: int) -> Page:
+    total_stmt = select(func.count()).select_from(Book)
+    total = (await db.execute(total_stmt)).scalar_one()
 
-    # Get items
-    result = await db.execute(
-        select(Book).offset(skip).limit(limit)
-    )
-    items = result.scalars().all()
+    data_stmt = select(Book).offset(skip).limit(limit)
+    items = (await db.execute(data_stmt)).scalars().all()
 
-    return PaginatedResponse(
-        items=items,
-        total=total,
-        skip=skip,
-        limit=limit
-    )
+    return Page(items=items, total=total, skip=skip, limit=limit)
 ```
 
 ## Filtering and Search
 
 ```python
-from typing import Optional
+from sqlalchemy import select
 
 
-@router.get("/")
-async def list_books(
+async def search_books(
+    db: AsyncSession,
+    author: str | None = None,
+    year: int | None = None,
+    query: str | None = None,
     skip: int = 0,
-    limit: int = 100,
-    author: Optional[str] = None,
-    year: Optional[int] = None,
-    search: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    limit: int = 50,
 ):
-    query = select(Book)
+    stmt = select(Book)
 
-    # Apply filters
     if author:
-        query = query.where(Book.author == author)
+        stmt = stmt.where(Book.author == author)
     if year:
-        query = query.where(Book.year == year)
-    if search:
-        query = query.where(Book.title.ilike(f"%{search}%"))
+        stmt = stmt.where(Book.year == year)
+    if query:
+        stmt = stmt.where(Book.title.ilike(f"%{query}%"))
 
-    query = query.offset(skip).limit(limit)
-    result = await db.execute(query)
+    stmt = stmt.offset(skip).limit(limit)
+    result = await db.execute(stmt)
     return result.scalars().all()
 ```
 
 ## Transactions
 
-### Automatic Transaction
-
-SQLAlchemy sessions handle transactions automatically:
+Use `session.begin()` to group multiple writes with automatic commit/rollback.
 
 ```python
-async def create_book(db: AsyncSession, book_data: BookCreate) -> Book:
-    book = Book(**book_data.model_dump())
-    db.add(book)
-    await db.commit()  # Transaction commits here
-    await db.refresh(book)
-    return book
-```
+from sqlalchemy.ext.asyncio import AsyncSession
 
-### Manual Transaction Control
 
-```python
-async def create_order_with_items(
-    db: AsyncSession,
-    order_data: OrderCreate
-) -> Order:
-    try:
-        # Create order
-        order = Order(customer_id=order_data.customer_id)
+async def create_order_with_items(db: AsyncSession, order, items):
+    async with db.begin():
         db.add(order)
-        await db.flush()  # Get order.id without committing
+        await db.flush()  # assigns order.id
 
-        # Create order items
-        for item in order_data.items:
-            order_item = OrderItem(
-                order_id=order.id,
-                product_id=item.product_id,
-                quantity=item.quantity
-            )
-            db.add(order_item)
-
-        await db.commit()
-        await db.refresh(order)
-        return order
-
-    except Exception:
-        await db.rollback()
-        raise HTTPException(500, "Failed to create order")
+        for item in items:
+            db.add(item)
 ```
 
 ## Soft Delete
 
 ```python
-# Model with soft delete
-from datetime import datetime
+from datetime import datetime, timezone
+from sqlalchemy import Boolean
 
 
 class Book(Base):
     __tablename__ = "books"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    title: Mapped[str] = mapped_column(String(200))
-    is_deleted: Mapped[bool] = mapped_column(default=False)
+    title: Mapped[str]
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
-# Service with soft delete
-async def get_books(db: AsyncSession) -> list[Book]:
-    result = await db.execute(
-        select(Book).where(Book.is_deleted == False)
-    )
-    return result.scalars().all()
-
-
 async def soft_delete_book(db: AsyncSession, book_id: int) -> None:
-    book = await get_book_by_id(db, book_id)
+    book = await get_book(db, book_id)
     if not book:
         raise HTTPException(404, "Book not found")
 
     book.is_deleted = True
-    book.deleted_at = datetime.utcnow()
+    book.deleted_at = datetime.now(timezone.utc)
     await db.commit()
-```
-
-## Complex Queries
-
-### Joins and Eager Loading
-
-```python
-from sqlalchemy.orm import selectinload
-
-
-async def get_users_with_items(db: AsyncSession) -> list[User]:
-    result = await db.execute(
-        select(User).options(selectinload(User.items))
-    )
-    return result.scalars().all()
-```
-
-### Aggregations
-
-```python
-from sqlalchemy import func
-
-
-async def get_books_per_author(db: AsyncSession):
-    result = await db.execute(
-        select(Book.author, func.count(Book.id).label("count"))
-        .group_by(Book.author)
-    )
-    return [
-        {"author": author, "count": count}
-        for author, count in result.all()
-    ]
-```
-
-## Main Application
-
-```python
-# main.py
-from fastapi import FastAPI
-from app.core.database import init_db
-from app.routers import book
-
-app = FastAPI(title="Book API")
-
-app.include_router(book.router)
-
-
-@app.on_event("startup")
-async def startup():
-    await init_db()
-```
-
-## Testing CRUD
-
-```bash
-# Create
-curl -X POST http://localhost:8000/books/ \
-  -H "Content-Type: application/json" \
-  -d '{"title": "1984", "author": "George Orwell", "year": 1949}'
-
-# List
-curl http://localhost:8000/books/
-
-# Get one
-curl http://localhost:8000/books/1
-
-# Update
-curl -X PUT http://localhost:8000/books/1 \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Nineteen Eighty-Four"}'
-
-# Delete
-curl -X DELETE http://localhost:8000/books/1
 ```
 
 ## Best Practices
 
-### Separation of Concerns
-
-| Layer | Responsibility |
-|-------|----------------|
-| Router | HTTP handling |
-| Service | Business logic |
-| Model | Database structure |
-| Schema | Data validation |
-
-### Error Handling
-
-```python
-from fastapi import HTTPException
-
-async def get_book_or_404(db: AsyncSession, book_id: int) -> Book:
-    book = await get_book_by_id(db, book_id)
-    if not book:
-        raise HTTPException(404, f"Book {book_id} not found")
-    return book
-```
-
-### Input Validation
-
-```python
-# Use Pydantic for validation
-class BookCreate(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
-    year: int = Field(ge=0, le=2100)
-```
+- Keep session scope per request.
+- Use `PATCH` with `exclude_unset=True` for partial updates.
+- Use `async with session.begin()` for multi-step writes.
+- Use pagination (and total count if needed).
+- Favor service layers for business logic.
 
 ## Summary
 
 | Pattern | Purpose |
 |---------|---------|
-| Service layer | Business logic isolation |
-| Pagination | Handle large datasets |
-| Soft delete | Preserve data |
-| Transactions | Data integrity |
-| Eager loading | Avoid N+1 queries |
+| Service layer | Isolate business logic |
+| Pagination | Control response size |
+| Transactions | Maintain data integrity |
+| Soft delete | Preserve data history |
+
+## References
+
+- [SQLAlchemy AsyncSession](https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html)
+- [SQLAlchemy ORM Querying](https://docs.sqlalchemy.org/en/20/orm/queryguide/index.html)
 
 ## Next Steps
 
 - [Database Relationships](./09-database-relationships.md) - Model relationships
-- [Database Migrations](./09a-database-migrations.md) - Manage schema changes with Alembic
+- [Database Migrations](./09a-database-migrations.md) - Manage schema changes
 
 ---
 

@@ -1,18 +1,49 @@
 # Testing FastAPI Applications
 
-This guide covers pytest setup, TestClient, async testing, fixtures, mocking, and test organization.
+This guide covers pytest setup, sync and async clients, lifespan events, dependency overrides, database isolation, mocking, WebSockets, and test organization for production-grade FastAPI apps.
 
 ## Installation
 
 ```bash
-pip install pytest pytest-asyncio httpx
+# With uv
+uv add --dev pytest httpx
+
+# Async support (choose one)
+uv add --dev pytest-asyncio
+# or
+uv add --dev anyio
+
+# Optional
+uv add --dev pytest-cov pytest-xdist
+uv add --dev asgi-lifespan respx pytest-mock
 ```
 
 | Package | Purpose |
 |---------|---------|
-| `pytest` | Testing framework |
-| `pytest-asyncio` | Async test support |
-| `httpx` | Async HTTP client for testing |
+| `pytest` | Test runner |
+| `httpx` | Required by `TestClient` and `AsyncClient` |
+| `pytest-asyncio` | Asyncio-based async tests/fixtures |
+| `anyio` | AnyIO pytest plugin (`pytest.mark.anyio`) |
+| `pytest-cov` | Coverage reports |
+| `pytest-xdist` | Parallel test execution |
+| `asgi-lifespan` | Lifespan management in async tests |
+| `respx` | Mock HTTPX requests |
+| `pytest-mock` | `mocker` fixture for cleaner mocks |
+
+## Running Tests
+
+```bash
+# With uv
+uv run pytest
+
+# Traditional
+pytest
+
+# Quick filters
+pytest -q
+pytest -k "auth and not refresh"
+pytest -x --maxfail=1
+```
 
 ## Project Structure
 
@@ -33,6 +64,8 @@ project/
 
 ## Pytest Configuration
 
+### Option A: pytest-asyncio
+
 **pytest.ini**
 
 ```ini
@@ -41,19 +74,33 @@ testpaths = tests
 python_files = test_*.py
 python_functions = test_*
 asyncio_mode = auto
+asyncio_default_fixture_loop_scope = function
 filterwarnings =
     ignore::DeprecationWarning
 ```
 
-**pyproject.toml** (alternative)
+**Notes**
+
+- `asyncio_mode = auto` lets you use `async def` tests and async fixtures without extra markers.
+- If you omit `asyncio_mode`, pytest-asyncio defaults to `strict` and you should mark async tests with `@pytest.mark.asyncio`.
+
+### Option B: AnyIO plugin (used in FastAPI async tests docs)
+
+**pyproject.toml**
 
 ```toml
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-asyncio_mode = "auto"
+anyio_mode = "auto"
 ```
 
+**Notes**
+
+- AnyIO auto mode can conflict with pytest-asyncio auto mode. If you keep pytest-asyncio installed, leave it in strict mode (don’t set `asyncio_mode = auto`).
+
 ## TestClient Basics
+
+`fastapi.testclient.TestClient` is the same client provided by Starlette and is built on HTTPX. Use regular `def` tests and normal (non-`await`) calls.
 
 ### Synchronous Testing
 
@@ -61,57 +108,131 @@ asyncio_mode = "auto"
 from fastapi.testclient import TestClient
 from app.main import app
 
-client = TestClient(app)
-
 
 def test_read_root():
-    response = client.get("/")
-    assert response.status_code == 200
-    assert response.json() == {"message": "Hello World"}
+    with TestClient(app) as client:
+        response = client.get("/")
+        assert response.status_code == 200
+        assert response.json() == {"message": "Hello World"}
 
 
 def test_create_item():
-    response = client.post(
-        "/items/",
-        json={"name": "Test Item", "price": 9.99}
-    )
-    assert response.status_code == 201
-    assert response.json()["name"] == "Test Item"
+    with TestClient(app) as client:
+        response = client.post(
+            "/items/",
+            json={"name": "Test Item", "price": 9.99}
+        )
+        assert response.status_code == 201
+        assert response.json()["name"] == "Test Item"
 
 
 def test_read_item_not_found():
-    response = client.get("/items/999")
-    assert response.status_code == 404
-    assert "not found" in response.json()["detail"].lower()
+    with TestClient(app) as client:
+        response = client.get("/items/999")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
 ```
 
-### Async Testing
+## Async Testing with HTTPX
+
+When you need `async` tests, use `httpx.AsyncClient` with `ASGITransport`. Set `base_url` so relative URLs like `"/"` work correctly.
 
 ```python
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 from app.main import app
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_read_users():
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test"
-    ) as client:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/users/")
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 ```
 
+**If you use pytest-asyncio**, replace `@pytest.mark.anyio` with `@pytest.mark.asyncio` (or keep `asyncio_mode = auto`).
+
+### Lifespan Events in Async Tests
+
+`AsyncClient` does **not** trigger lifespan events (startup/shutdown). Use `asgi-lifespan` when you need to ensure they run.
+
+```python
+import pytest
+from asgi_lifespan import LifespanManager
+from httpx import ASGITransport, AsyncClient
+from app.main import app
+
+
+@pytest.mark.anyio
+async def test_with_lifespan():
+    async with LifespanManager(app) as manager:
+        transport = ASGITransport(app=manager.app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/health")
+            assert response.status_code == 200
+```
+
+## Lifespan Events in Sync Tests
+
+For sync tests, use `TestClient` as a context manager to ensure lifespan startup/shutdown is executed.
+
+```python
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from contextlib import asynccontextmanager
+
+items = {}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    items["foo"] = {"name": "Fighters"}
+    yield
+    items.clear()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+@app.get("/items/{item_id}")
+async def read_items(item_id: str):
+    return items[item_id]
+
+
+def test_read_items():
+    assert items == {}
+    with TestClient(app) as client:
+        assert items != {}
+        response = client.get("/items/foo")
+        assert response.status_code == 200
+```
+
+## Dependency Overrides
+
+Use `app.dependency_overrides` to replace real dependencies (DB, external services) with test doubles.
+
+```python
+from app.core.database import get_db
+
+
+def override_get_db():
+    yield test_session
+
+
+app.dependency_overrides[get_db] = override_get_db
+# run tests...
+app.dependency_overrides.clear()
+```
+
 ## Fixtures
 
-### conftest.py
+### conftest.py (sync DB + TestClient)
 
 ```python
 import pytest
 from fastapi.testclient import TestClient
-from httpx import AsyncClient, ASGITransport
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -119,13 +240,11 @@ from sqlalchemy.pool import StaticPool
 from app.main import app
 from app.core.database import Base, get_db
 
-# Test database URL
 TEST_DATABASE_URL = "sqlite:///:memory:"
 
 
 @pytest.fixture(scope="session")
 def engine():
-    """Create test database engine."""
     engine = create_engine(
         TEST_DATABASE_URL,
         connect_args={"check_same_thread": False},
@@ -138,7 +257,6 @@ def engine():
 
 @pytest.fixture
 def db_session(engine):
-    """Create a new database session for each test."""
     TestingSessionLocal = sessionmaker(
         autocommit=False,
         autoflush=False,
@@ -154,31 +272,36 @@ def db_session(engine):
 
 @pytest.fixture
 def client(db_session):
-    """Test client with database override."""
-    def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-async def async_client(db_session):
-    """Async test client."""
     def override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test"
-    ) as client:
+    with TestClient(app) as test_client:
+        yield test_client
+
+    app.dependency_overrides.clear()
+```
+
+### Async client fixture (HTTPX + ASGITransport)
+
+```python
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from app.main import app
+from app.core.database import get_db
+
+
+@pytest.fixture
+async def async_client(db_session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
     app.dependency_overrides.clear()
@@ -187,9 +310,11 @@ async def async_client(db_session):
 ### User Fixtures
 
 ```python
+import pytest
+
+
 @pytest.fixture
 def test_user(db_session):
-    """Create a test user."""
     from app.models.user import User
     from app.core.security import hash_password
 
@@ -206,7 +331,6 @@ def test_user(db_session):
 
 @pytest.fixture
 def auth_headers(client, test_user):
-    """Get authentication headers for test user."""
     response = client.post(
         "/auth/token",
         data={"username": "test@example.com", "password": "testpassword"}
@@ -236,7 +360,6 @@ def test_create_item(client, auth_headers):
 
 
 def test_read_items(client, auth_headers):
-    # Create items first
     client.post("/items/", json={"name": "Item 1", "price": 10}, headers=auth_headers)
     client.post("/items/", json={"name": "Item 2", "price": 20}, headers=auth_headers)
 
@@ -246,7 +369,6 @@ def test_read_items(client, auth_headers):
 
 
 def test_update_item(client, auth_headers):
-    # Create item
     create_response = client.post(
         "/items/",
         json={"name": "Original", "price": 10},
@@ -254,7 +376,6 @@ def test_update_item(client, auth_headers):
     )
     item_id = create_response.json()["id"]
 
-    # Update item
     response = client.put(
         f"/items/{item_id}",
         json={"name": "Updated", "price": 15},
@@ -265,7 +386,6 @@ def test_update_item(client, auth_headers):
 
 
 def test_delete_item(client, auth_headers):
-    # Create item
     create_response = client.post(
         "/items/",
         json={"name": "To Delete", "price": 10},
@@ -273,11 +393,9 @@ def test_delete_item(client, auth_headers):
     )
     item_id = create_response.json()["id"]
 
-    # Delete item
     response = client.delete(f"/items/{item_id}", headers=auth_headers)
     assert response.status_code == 204
 
-    # Verify deleted
     response = client.get(f"/items/{item_id}", headers=auth_headers)
     assert response.status_code == 404
 ```
@@ -337,7 +455,7 @@ def test_protected_route_with_token(client, auth_headers):
 def test_create_item_invalid_price(client, auth_headers):
     response = client.post(
         "/items/",
-        json={"name": "Item", "price": -10},  # Negative price
+        json={"name": "Item", "price": -10},
         headers=auth_headers
     )
     assert response.status_code == 422
@@ -346,7 +464,7 @@ def test_create_item_invalid_price(client, auth_headers):
 def test_create_item_missing_field(client, auth_headers):
     response = client.post(
         "/items/",
-        json={"name": "Item"},  # Missing price
+        json={"name": "Item"},
         headers=auth_headers
     )
     assert response.status_code == 422
@@ -362,12 +480,44 @@ def test_create_item_invalid_type(client, auth_headers):
     assert response.status_code == 422
 ```
 
+## Testing Error Responses
+
+By default, `TestClient` raises server exceptions. To assert on 500 responses, disable it.
+
+```python
+from fastapi.testclient import TestClient
+from app.main import app
+
+
+def test_internal_error_response():
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/boom")
+        assert response.status_code == 500
+```
+
+## Testing WebSockets
+
+```python
+from fastapi.testclient import TestClient
+from app.main import app
+
+
+def test_websocket_echo():
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            ws.send_text("ping")
+            data = ws.receive_text()
+            assert data == "ping"
+```
+
 ## Mocking
 
 ### Mocking External Services
 
 ```python
+import pytest
 from unittest.mock import patch, AsyncMock
+
 
 def test_send_email(client, auth_headers):
     with patch("app.services.email.send_email") as mock_send:
@@ -382,7 +532,7 @@ def test_send_email(client, auth_headers):
         mock_send.assert_called_once()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_external_api_call(async_client):
     with patch("app.services.external.fetch_data", new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = {"data": "mocked"}
@@ -393,10 +543,31 @@ async def test_external_api_call(async_client):
         assert response.json()["data"] == "mocked"
 ```
 
-### Mocking Database
+### Mocking HTTPX with respx
 
 ```python
-from unittest.mock import MagicMock
+import respx
+from httpx import Response
+
+
+@respx.mock
+def test_external_http_call(client):
+    route = respx.get(\"https://api.example.com/v1/data\").mock(
+        return_value=Response(200, json={\"ok\": True})
+    )
+
+    response = client.get(\"/external-data\")
+
+    assert route.called
+    assert response.status_code == 200
+    assert response.json()[\"ok\"] is True
+```
+
+### Mocking Database Errors
+
+```python
+from unittest.mock import patch
+
 
 def test_database_error_handling(client, auth_headers):
     with patch("app.services.items.get_items") as mock_get:
@@ -412,13 +583,18 @@ def test_database_error_handling(client, auth_headers):
 ### Async Fixtures
 
 ```python
-import pytest_asyncio
+import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from asgi_lifespan import LifespanManager
+
+from app.main import app
+from app.core.database import Base, get_db
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
-@pytest_asyncio.fixture
+@pytest.fixture
 async def async_engine():
     engine = create_async_engine(TEST_DATABASE_URL)
     async with engine.begin() as conn:
@@ -429,7 +605,7 @@ async def async_engine():
     await engine.dispose()
 
 
-@pytest_asyncio.fixture
+@pytest.fixture
 async def async_db_session(async_engine):
     async_session = async_sessionmaker(
         async_engine,
@@ -440,18 +616,17 @@ async def async_db_session(async_engine):
         await session.rollback()
 
 
-@pytest_asyncio.fixture
-async def async_client(async_db_session):
+@pytest.fixture
+async def async_client_db(async_db_session):
     async def override_get_db():
         yield async_db_session
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test"
-    ) as client:
-        yield client
+    async with LifespanManager(app) as manager:
+        transport = ASGITransport(app=manager.app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
 
     app.dependency_overrides.clear()
 ```
@@ -459,18 +634,21 @@ async def async_client(async_db_session):
 ### Async Tests
 
 ```python
-@pytest.mark.asyncio
-async def test_create_user_async(async_client):
-    response = await async_client.post(
+import pytest
+
+
+@pytest.mark.anyio
+async def test_create_user_async(async_client_db):
+    response = await async_client_db.post(
         "/users/",
         json={"email": "async@test.com", "password": "password123"}
     )
     assert response.status_code == 201
 
 
-@pytest.mark.asyncio
-async def test_get_users_async(async_client):
-    response = await async_client.get("/users/")
+@pytest.mark.anyio
+async def test_get_users_async(async_client_db):
+    response = await async_client_db.get("/users/")
     assert response.status_code == 200
 ```
 
@@ -480,6 +658,7 @@ async def test_get_users_async(async_client):
 
 ```python
 import pytest
+
 
 @pytest.mark.parametrize("email,password,expected_status", [
     ("valid@email.com", "validpass123", 201),
@@ -516,7 +695,7 @@ class TestUserEndpoints:
         assert response.status_code == 200
 ```
 
-## Running Tests
+## CLI Cheatsheet
 
 ```bash
 # Run all tests
@@ -531,15 +710,16 @@ pytest tests/test_users.py
 # Run specific test
 pytest tests/test_users.py::test_create_user
 
-# Run with coverage
-pip install pytest-cov
-pytest --cov=app --cov-report=html
+# Run last failures
+pytest --lf
 
-# Run only async tests
-pytest -m asyncio
+# Run with coverage
+pytest --cov=app --cov-report=term-missing --cov-report=html
+
+# Run only async tests (marker-based)
+pytest -m anyio
 
 # Run tests in parallel
-pip install pytest-xdist
 pytest -n auto
 ```
 
@@ -565,29 +745,36 @@ TOTAL                      90      5    94%
 | Practice | Description |
 |----------|-------------|
 | Isolate tests | Each test should be independent |
-| Use fixtures | Share setup code efficiently |
+| Reset overrides | Clear `app.dependency_overrides` after each test |
+| Use context managers | Use `TestClient` context to run lifespan events |
+| Mock external services | Don’t call real third-party APIs |
 | Test edge cases | Empty inputs, boundaries, errors |
-| Mock external services | Don't hit real APIs in tests |
-| Use meaningful names | `test_create_user_with_invalid_email` |
 | Keep tests fast | Aim for < 1 second per test |
 
 ## Summary
 
 | Component | Purpose |
 |-----------|---------|
-| `TestClient` | Sync testing |
-| `AsyncClient` | Async testing |
-| `conftest.py` | Shared fixtures |
-| `pytest.mark.asyncio` | Mark async tests |
-| `dependency_overrides` | Override dependencies |
+| `TestClient` | Sync testing via Starlette/HTTPX |
+| `AsyncClient` + `ASGITransport` | Async testing without a server |
+| `LifespanManager` | Trigger lifespan events in async tests |
+| `dependency_overrides` | Swap dependencies during tests |
+| `pytest.mark.anyio` | AnyIO async tests |
+| `pytest.mark.asyncio` | pytest-asyncio async tests |
 | `pytest-cov` | Coverage reports |
 
 ## References
 
 - [FastAPI Testing Documentation](https://fastapi.tiangolo.com/tutorial/testing/)
-- [pytest Documentation](https://docs.pytest.org/)
-- [pytest-asyncio](https://pytest-asyncio.readthedocs.io/)
-- [HTTPX Documentation](https://www.python-httpx.org/)
+- [FastAPI Async Tests](https://fastapi.tiangolo.com/advanced/async-tests/)
+- [FastAPI Testing Dependencies with Overrides](https://fastapi.tiangolo.com/advanced/testing-dependencies/)
+- [FastAPI Testing Lifespan Events](https://fastapi.tiangolo.com/advanced/testing-events/)
+- [Starlette TestClient](https://starlette.dev/testclient/)
+- [Starlette Lifespan](https://www.starlette.dev/lifespan/)
+- [HTTPX ASGI Transport](https://www.python-httpx.org/advanced/transports/)
+- [pytest-asyncio Configuration](https://pytest-asyncio.readthedocs.io/en/v1.1.1/reference/configuration.html)
+- [AnyIO Testing](https://anyio.readthedocs.io/en/stable/testing.html)
+- [asgi-lifespan](https://github.com/florimondmanca/asgi-lifespan)
 
 ## Next Steps
 

@@ -1,6 +1,6 @@
 # Routing & Endpoints
 
-This guide covers HTTP methods, path parameters, query parameters, and route organization in FastAPI.
+This guide covers HTTP methods, path/query parameters, validation with `Path`/`Query`, route order, and router organization with `APIRouter`.
 
 ## HTTP Methods
 
@@ -11,25 +11,30 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
-@app.get("/items")           # Read resources
-def get_items():
+
+@app.get("/items")
+async def get_items():
     return {"items": ["item1", "item2"]}
 
-@app.post("/items")          # Create resources
-def create_item():
+
+@app.post("/items")
+async def create_item():
     return {"status": "created"}
 
-@app.put("/items/{id}")      # Full update
-def update_item(id: int):
-    return {"status": "updated", "id": id}
 
-@app.patch("/items/{id}")    # Partial update
-def patch_item(id: int):
-    return {"status": "patched", "id": id}
+@app.put("/items/{item_id}")
+async def update_item(item_id: int):
+    return {"status": "updated", "id": item_id}
 
-@app.delete("/items/{id}")   # Delete resources
-def delete_item(id: int):
-    return {"status": "deleted", "id": id}
+
+@app.patch("/items/{item_id}")
+async def patch_item(item_id: int):
+    return {"status": "patched", "id": item_id}
+
+
+@app.delete("/items/{item_id}")
+async def delete_item(item_id: int):
+    return {"status": "deleted", "id": item_id}
 ```
 
 ### HTTP Methods Reference
@@ -37,109 +42,62 @@ def delete_item(id: int):
 | Method | Purpose | Idempotent | Has Body |
 |--------|---------|------------|----------|
 | `GET` | Retrieve resources | Yes | No |
-| `POST` | Create new resources | No | Yes |
-| `PUT` | Replace resources completely | Yes | Yes |
-| `PATCH` | Update resources partially | No | Yes |
+| `POST` | Create resources | No | Yes |
+| `PUT` | Replace resources | Yes | Yes |
+| `PATCH` | Update partially | No | Yes |
 | `DELETE` | Remove resources | Yes | No |
 
-## Route Order
+## Route Matching Order
 
-FastAPI evaluates routes in definition order. More specific routes must come first:
+FastAPI evaluates routes in the order they are defined. Specific routes must come before dynamic ones.
 
 ```python
-# Correct order
-@app.get("/users/me")        # Specific route first
-def get_current_user():
-    return {"user": "current_user"}
+@app.get("/users/me")
+async def get_current_user():
+    return {"user": "me"}
 
-@app.get("/users/{user_id}") # Generic route second
-def get_user(user_id: str):
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: str):
     return {"user_id": user_id}
 ```
 
-If reversed, `/users/me` would match `{user_id}` as "me".
-
 ## Path Parameters
 
-Path parameters capture values from the URL path.
+Path parameters capture values from the URL path and are automatically converted based on type hints.
 
 ### Basic Usage
 
 ```python
 @app.get("/items/{item_id}")
-def read_item(item_id: int):
+async def read_item(item_id: int):
     return {"item_id": item_id}
 ```
 
-**Request:** `GET /items/42`
-**Response:** `{"item_id": 42}`
-
-### Supported Types
-
-| Type | Example Value | Validation |
-|------|---------------|------------|
-| `int` | `42` | Integer only |
-| `str` | `"hello"` | Any string |
-| `float` | `3.14` | Decimal numbers |
-| `UUID` | `"550e8400-..."` | Valid UUID format |
-| `date` | `"2024-01-15"` | YYYY-MM-DD format |
+### Validation with `Path`
 
 ```python
-from uuid import UUID
-from datetime import date
-
-@app.get("/items/{item_id}")
-def get_item(item_id: int):
-    return {"item_id": item_id}
-
-@app.get("/models/{model_id}")
-def get_model(model_id: UUID):
-    return {"model_id": model_id}
-
-@app.get("/events/{event_date}")
-def get_event(event_date: date):
-    return {"date": event_date}
-
-@app.get("/files/{file_path:path}")  # Path with slashes
-def get_file(file_path: str):
-    return {"path": file_path}
-```
-
-### Path Validation
-
-Use `Path` for additional validation:
-
-```python
+from typing import Annotated
 from fastapi import Path
 
 @app.get("/items/{item_id}")
-def read_item(
-    item_id: int = Path(
-        ...,                    # Required
-        title="Item ID",        # Documentation
-        description="The ID of the item to retrieve",
-        ge=1,                   # Greater than or equal to 1
-        le=1000                 # Less than or equal to 1000
-    )
+async def read_item(
+    item_id: Annotated[int, Path(title="Item ID", ge=1, le=1000)]
 ):
     return {"item_id": item_id}
 ```
 
-**Validation Options:**
+### Path Parameters Containing Paths
 
-| Option | Description | Example |
-|--------|-------------|---------|
-| `...` | Required parameter | `Path(...)` |
-| `ge` | Greater than or equal | `ge=0` |
-| `gt` | Greater than | `gt=0` |
-| `le` | Less than or equal | `le=100` |
-| `lt` | Less than | `lt=100` |
-| `title` | Documentation title | `title="ID"` |
-| `description` | Documentation description | `description="..."` |
+Use the `:path` converter to capture a full path including slashes:
 
-### Predefined Values with Enum
+```python
+@app.get("/files/{file_path:path}")
+async def read_file(file_path: str):
+    return {"path": file_path}
+```
 
-Restrict parameters to specific values:
+### Predefined Values with `Enum`
 
 ```python
 from enum import Enum
@@ -149,112 +107,76 @@ class ModelName(str, Enum):
     resnet = "resnet"
     lenet = "lenet"
 
+
 @app.get("/models/{model_name}")
-def get_model(model_name: ModelName):
+async def get_model(model_name: ModelName):
     if model_name is ModelName.alexnet:
         return {"model": model_name, "type": "image classification"}
-
-    if model_name is ModelName.resnet:
-        return {"model": model_name, "type": "deep residual"}
-
-    return {"model": model_name, "type": "convolutional"}
+    return {"model": model_name}
 ```
-
-**Valid requests:** `/models/alexnet`, `/models/resnet`, `/models/lenet`
-**Invalid requests:** `/models/other` returns 422 validation error
 
 ## Query Parameters
 
 Query parameters are key-value pairs after `?` in the URL.
 
-### Basic Usage
+### Required vs Optional
 
 ```python
-@app.get("/items/")
-def read_items(skip: int = 0, limit: int = 10):
-    return {"skip": skip, "limit": limit}
+@app.get("/search")
+async def search_items(q: str, limit: int = 10):
+    return {"q": q, "limit": limit}
 ```
 
-**Request:** `GET /items/?skip=20&limit=50`
-**Response:** `{"skip": 20, "limit": 50}`
+When a default is provided, the parameter is optional. Without a default, it is required.
 
-### Optional vs Required
-
-```python
-from typing import Optional
-
-@app.get("/items/")
-def read_items(
-    required: str,                    # Required (no default)
-    optional: Optional[str] = None    # Optional
-):
-    result = {"required": required}
-    if optional:
-        result["optional"] = optional
-    return result
-```
-
-### Query Validation
+### Validation with `Query`
 
 ```python
+from typing import Annotated
 from fastapi import Query
 
 @app.get("/items/")
-def read_items(
-    q: str = Query(
-        default=None,           # Default value
-        min_length=3,           # Minimum length
-        max_length=50,          # Maximum length
-        pattern="^[a-z]+$",     # Regex pattern (Pydantic v2)
-        title="Search Query",
-        description="Search string for filtering items"
-    )
+async def read_items(
+    q: Annotated[
+        str | None,
+        Query(
+            min_length=3,
+            max_length=50,
+            pattern="^[a-z0-9-]+$",
+            alias="item-query",
+            deprecated=True,
+        ),
+    ] = None
 ):
     return {"q": q}
 ```
 
-**Validation Options:**
-
-| Option | Description | Example |
-|--------|-------------|---------|
-| `default` | Default value | `default=None` |
-| `min_length` | Minimum string length | `min_length=3` |
-| `max_length` | Maximum string length | `max_length=50` |
-| `pattern` | Regex pattern | `pattern="^[a-z]+$"` |
-| `ge`, `gt`, `le`, `lt` | Numeric constraints | `ge=0` |
-| `alias` | Alternative parameter name | `alias="item-query"` |
-
 ### Boolean Conversion
 
-FastAPI automatically converts boolean query parameters:
+FastAPI converts query values to `bool` automatically:
 
 ```python
-@app.get("/items/")
-def read_items(featured: bool = False):
-    return {"featured": featured}
+@app.get("/items/{item_id}")
+async def read_item(item_id: str, short: bool = False):
+    return {"item_id": item_id, "short": short}
 ```
-
-**Truthy values:** `true`, `1`, `yes`, `on`
-**Falsy values:** `false`, `0`, `no`, `off`
 
 ### Multiple Values
 
-Accept multiple values for the same parameter:
-
 ```python
-from typing import List
+from typing import Annotated
+from fastapi import Query
 
 @app.get("/items/")
-def read_items(q: List[str] = Query(default=[])):
+async def read_items(q: Annotated[list[str], Query()] = []):
     return {"q": q}
 ```
 
-**Request:** `GET /items/?q=foo&q=bar&q=baz`
-**Response:** `{"q": ["foo", "bar", "baz"]}`
+**Request:** `GET /items/?q=foo&q=bar` → `{"q": ["foo", "bar"]}`
 
-## Combining Parameters
+## Combining Path, Query, and Body
 
-You can combine path, query, and body parameters:
+FastAPI uses type hints to determine where each parameter comes from:
 
 ```python
 from pydantic import BaseModel
@@ -263,31 +185,19 @@ class Item(BaseModel):
     name: str
     price: float
 
+
 @app.put("/items/{item_id}")
-def update_item(
-    item_id: int,                    # Path parameter
-    q: Optional[str] = None,         # Query parameter
-    item: Item = None                # Request body
+async def update_item(
+    item_id: int,  # path
+    q: str | None = None,  # query
+    item: Item | None = None,  # body
 ):
-    result = {"item_id": item_id}
-    if q:
-        result["q"] = q
-    if item:
-        result["item"] = item.model_dump()
-    return result
+    return {"item_id": item_id, "q": q, "item": item}
 ```
-
-**FastAPI Detection Rules:**
-
-| Declaration | Parameter Type |
-|-------------|----------------|
-| In path string `{param}` | Path parameter |
-| Singular type (`int`, `str`, etc.) | Query parameter |
-| Pydantic model type | Request body |
 
 ## Router Organization
 
-For larger applications, organize routes with `APIRouter`:
+Use `APIRouter` to group endpoints and reuse common configuration.
 
 ```python
 # routers/items.py
@@ -296,105 +206,92 @@ from fastapi import APIRouter
 router = APIRouter(
     prefix="/items",
     tags=["items"],
-    responses={404: {"description": "Not found"}}
+    responses={404: {"description": "Not found"}},
 )
 
 @router.get("/")
-def list_items():
+async def list_items():
     return {"items": []}
 
 @router.get("/{item_id}")
-def get_item(item_id: int):
+async def get_item(item_id: int):
     return {"item_id": item_id}
-
-@router.post("/")
-def create_item():
-    return {"created": True}
 ```
 
 ```python
 # main.py
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from routers import items
+from app.dependencies import get_token_header
 
 app = FastAPI()
 app.include_router(items.router)
+
+# Include with extra settings
+app.include_router(
+    items.router,
+    prefix="/v2",
+    tags=["items"],
+    dependencies=[Depends(get_token_header)],
+    responses={418: {"description": "I'm a teapot"}},
+)
 ```
 
-### Router Parameters
+### Dependencies with `Depends`
 
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `prefix` | URL prefix for all routes | `prefix="/items"` |
-| `tags` | OpenAPI tags for documentation | `tags=["items"]` |
-| `dependencies` | Dependencies for all routes | `dependencies=[Depends(verify_token)]` |
-| `responses` | Default response documentation | `responses={404: {...}}` |
-
-## Best Practices
-
-### Naming Conventions
+Use `Depends` to inject shared logic into routes:
 
 ```python
-# Resource-based naming
-@app.get("/users")               # List users
-@app.post("/users")              # Create user
-@app.get("/users/{user_id}")     # Get specific user
-@app.put("/users/{user_id}")     # Update user
-@app.delete("/users/{user_id}")  # Delete user
+from typing import Annotated
+from fastapi import Depends
 
-# Nested resources
-@app.get("/users/{user_id}/orders")           # User's orders
-@app.get("/users/{user_id}/orders/{order_id}") # Specific order
+async def common_parameters(q: str | None = None, skip: int = 0, limit: int = 100):
+    return {"q": q, "skip": skip, "limit": limit}
+
+
+@app.get("/items/")
+async def read_items(commons: Annotated[dict, Depends(common_parameters)]):
+    return commons
 ```
 
-### Status Codes
+## Response Metadata
+
+You can document and constrain responses at the route level.
 
 ```python
 from fastapi import status
+from pydantic import BaseModel
 
-@app.post("/items/", status_code=status.HTTP_201_CREATED)
-def create_item():
-    return {"created": True}
+class ItemOut(BaseModel):
+    id: int
+    name: str
 
-@app.delete("/items/{id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_item(id: int):
-    return None
+
+@app.post("/items/", response_model=ItemOut, status_code=status.HTTP_201_CREATED)
+async def create_item():
+    return {"id": 1, "name": "Item"}
 ```
 
-### Documentation
+## Best Practices
 
-```python
-@app.get(
-    "/items/{item_id}",
-    summary="Get a specific item",
-    description="Retrieve item details by ID",
-    response_description="The requested item",
-    tags=["items"],
-    deprecated=False
-)
-def get_item(item_id: int):
-    """
-    Get an item by ID.
-
-    - **item_id**: The unique identifier of the item
-    """
-    return {"item_id": item_id}
-```
+- Keep routes resource-based: `/users`, `/users/{user_id}`.
+- Prefer `Annotated` with `Path`/`Query` for clarity and documentation.
+- Group related endpoints with `APIRouter`.
+- Keep route order deterministic and place static routes before dynamic ones.
 
 ## Summary
 
 You learned:
 
-- HTTP methods and their purposes
-- Path parameters with type validation
-- Query parameters with defaults and validation
-- Combining different parameter types
-- Organizing routes with `APIRouter`
-- Best practices for route naming
+- How to define routes with HTTP method decorators
+- How path and query parameters work with validation
+- How to capture full paths with `:path`
+- How to organize routes with `APIRouter` and `include_router`
+- How to attach dependencies and metadata to routes
 
 ## Next Steps
 
-- [Data Validation](./03-data-validation.md) - Learn Pydantic validation
+- [Data Validation](./03-data-validation.md) - Master Pydantic validation
 - [Request Bodies](./04-request-bodies.md) - Handle JSON and form data
 
 ---

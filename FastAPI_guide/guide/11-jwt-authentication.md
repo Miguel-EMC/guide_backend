@@ -1,119 +1,98 @@
 # JWT Authentication
 
-This guide covers JWT tokens, token creation and validation, refresh tokens, and protected routes in FastAPI.
+This guide follows the current FastAPI OAuth2 + JWT tutorial using PyJWT and pwdlib for hashing.
 
 ## What is JWT?
 
-JSON Web Token (JWT) is a compact, URL-safe way to represent claims between parties.
-
-### Token Structure
-
-```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.
-eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ.
-SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
-```
-
-| Part | Content |
-|------|---------|
-| Header | Algorithm and token type |
-| Payload | User data (claims) |
-| Signature | Verification signature |
+JWT (JSON Web Token) is a signed token format. It is **not encrypted**, so do not store sensitive data inside the payload.
 
 ## Installation
 
 ```bash
-pip install fastapi "python-jose[cryptography]" passlib[bcrypt]
+pip install "fastapi[standard]" python-multipart
+pip install "pyjwt[crypto]" "pwdlib[argon2]"
 ```
 
-## Project Structure
+- `python-multipart` is required for `OAuth2PasswordRequestForm`.
+- `pyjwt[crypto]` enables RSA/ECDSA algorithms. Use plain `pyjwt` for HS256.
+- `pwdlib[argon2]` provides modern password hashing.
+
+## Project Layout
 
 ```
 app/
 ├── core/
-│   ├── config.py      # Settings
-│   └── security.py    # JWT functions
+│   ├── config.py
+│   └── security.py
+├── models/
 ├── schemas/
-│   └── auth.py        # Auth schemas
+│   └── auth.py
 ├── routers/
-│   └── auth.py        # Auth routes
+│   └── auth.py
 └── main.py
 ```
 
 ## Configuration
 
-**config.py**
-
 ```python
-from pydantic_settings import BaseSettings
+# core/config.py
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    secret_key: str = "your-secret-key-change-in-production"
+    secret_key: str = "change-me"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
-    refresh_token_expire_days: int = 7
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env")
 
 
 settings = Settings()
 ```
 
-## Security Module
-
-**security.py**
+## Security Utilities
 
 ```python
-from datetime import datetime, timedelta
-from typing import Optional
-from jose import JWTError, jwt
-from passlib.context import CryptContext
-from fastapi import HTTPException, status, Depends
-from fastapi.security import OAuth2PasswordBearer
+# core/security.py
+from datetime import datetime, timedelta, timezone
+from typing import Any
+import jwt
+from jwt import InvalidTokenError
+from pwdlib import PasswordHash
+from fastapi import HTTPException, status
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
+password_hash = PasswordHash.recommended()
+DUMMY_HASH = password_hash.hash("not-the-password")
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return password_hash.hash(password)
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(password: str, password_hash_value: str) -> bool:
+    return password_hash.verify(password, password_hash_value)
 
 
-def create_access_token(
-    data: dict,
-    expires_delta: Optional[timedelta] = None
-) -> str:
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (
-        expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
+def verify_password_and_mitigate_timing(password: str, password_hash_value: str | None) -> bool:
+    if password_hash_value is None:
+        password_hash.verify(password, DUMMY_HASH)
+        return False
+    return password_hash.verify(password, password_hash_value)
+
+
+def create_access_token(subject: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.access_token_expire_minutes
     )
-    to_encode.update({"exp": expire, "type": "access"})
-    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+    payload = {"sub": subject, "exp": expire}
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
-def create_refresh_token(data: dict) -> str:
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
-    to_encode.update({"exp": expire, "type": "refresh"})
-    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-
-
-def decode_token(token: str) -> dict:
+def decode_token(token: str) -> dict[str, Any]:
     try:
-        payload = jwt.decode(
-            token,
-            settings.secret_key,
-            algorithms=[settings.algorithm]
-        )
-        return payload
-    except JWTError:
+        return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    except InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -123,27 +102,13 @@ def decode_token(token: str) -> dict:
 
 ## Schemas
 
-**schemas/auth.py**
-
 ```python
-from pydantic import BaseModel, EmailStr
-
-
-class UserCreate(BaseModel):
-    username: str
-    email: EmailStr
-    password: str
-
-
-class UserResponse(BaseModel):
-    id: int
-    username: str
-    email: str
+# schemas/auth.py
+from pydantic import BaseModel
 
 
 class Token(BaseModel):
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
 
 
@@ -151,307 +116,88 @@ class TokenData(BaseModel):
     username: str | None = None
 ```
 
-## Authentication Routes
-
-**routers/auth.py**
+## Auth Routes
 
 ```python
+# routers/auth.py
+from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
-from datetime import timedelta
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from app.core.security import (
-    hash_password,
-    verify_password,
     create_access_token,
-    create_refresh_token,
     decode_token,
-    oauth2_scheme
+    hash_password,
+    verify_password_and_mitigate_timing,
 )
-from app.schemas.auth import UserCreate, UserResponse, Token
+from app.schemas.auth import Token
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+router = APIRouter(prefix="/auth", tags=["Auth"])
 
-# Simulated database
-users_db = {}
-user_id_counter = 1
+# OAuth2 password flow
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
-
-@router.post("/register", response_model=UserResponse, status_code=201)
-def register(user: UserCreate):
-    global user_id_counter
-
-    if user.username in users_db:
-        raise HTTPException(400, "Username already registered")
-
-    users_db[user.username] = {
-        "id": user_id_counter,
-        "username": user.username,
-        "email": user.email,
-        "hashed_password": hash_password(user.password)
-    }
-    user_id_counter += 1
-
-    return UserResponse(
-        id=users_db[user.username]["id"],
-        username=user.username,
-        email=user.email
-    )
+# Fake user DB
+users_db = {
+    "johndoe": {"username": "johndoe", "hashed_password": hash_password("secret")},
+}
 
 
 @router.post("/token", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
     user = users_db.get(form_data.username)
-
     if not user:
-        raise HTTPException(401, "Invalid credentials")
+        verify_password_and_mitigate_timing(form_data.password, None)
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
 
-    if not verify_password(form_data.password, user["hashed_password"]):
-        raise HTTPException(401, "Invalid credentials")
+    if not verify_password_and_mitigate_timing(
+        form_data.password, user["hashed_password"]
+    ):
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
 
-    access_token = create_access_token(data={"sub": user["username"]})
-    refresh_token = create_refresh_token(data={"sub": user["username"]})
-
-    return Token(
-        access_token=access_token,
-        refresh_token=refresh_token
-    )
+    token = create_access_token(subject=user["username"])
+    return Token(access_token=token)
 
 
-@router.post("/refresh", response_model=Token)
-def refresh_token(refresh_token: str):
-    payload = decode_token(refresh_token)
-
-    if payload.get("type") != "refresh":
-        raise HTTPException(401, "Invalid token type")
-
+def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
+    payload = decode_token(token)
     username = payload.get("sub")
-    if not username or username not in users_db:
-        raise HTTPException(401, "Invalid token")
-
-    new_access_token = create_access_token(data={"sub": username})
-    new_refresh_token = create_refresh_token(data={"sub": username})
-
-    return Token(
-        access_token=new_access_token,
-        refresh_token=new_refresh_token
-    )
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = users_db.get(username)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
 ```
 
-## Protected Routes
-
-### Get Current User Dependency
+## Protect Routes
 
 ```python
 from fastapi import Depends
-from app.core.security import oauth2_scheme, decode_token
-
-
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    payload = decode_token(token)
-
-    if payload.get("type") != "access":
-        raise HTTPException(401, "Invalid token type")
-
-    username = payload.get("sub")
-    if not username:
-        raise HTTPException(401, "Invalid token")
-
-    user = users_db.get(username)
-    if not user:
-        raise HTTPException(401, "User not found")
-
-    return UserResponse(
-        id=user["id"],
-        username=user["username"],
-        email=user["email"]
-    )
-
-
-@router.get("/me", response_model=UserResponse)
-def read_current_user(current_user: UserResponse = Depends(get_current_user)):
-    return current_user
-```
-
-### Protecting Other Routes
-
-```python
 from app.routers.auth import get_current_user
 
-@app.get("/items/")
-def get_items(current_user: UserResponse = Depends(get_current_user)):
-    # Only authenticated users can access
-    return {"items": [], "user": current_user.username}
+
+@app.get("/me")
+async def read_me(user: dict = Depends(get_current_user)):
+    return user
 ```
 
-## Token Revocation
+## Best Practices
 
-JWT tokens are stateless. For revocation, use a blacklist.
+- Keep access tokens short-lived (15-30 minutes).
+- Rotate and protect your `SECRET_KEY`.
+- Do not store tokens in localStorage for web apps; prefer HttpOnly cookies.
+- Add refresh tokens only if you can store and revoke them securely.
 
-### Simple Blacklist
+## References
 
-```python
-# In-memory blacklist (use Redis in production)
-revoked_tokens = set()
-
-
-@router.post("/logout")
-def logout(token: str = Depends(oauth2_scheme)):
-    revoked_tokens.add(token)
-    return {"message": "Successfully logged out"}
-
-
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    if token in revoked_tokens:
-        raise HTTPException(401, "Token has been revoked")
-
-    payload = decode_token(token)
-    # ... rest of validation
-```
-
-### Redis Blacklist (Production)
-
-```python
-import redis
-
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
-
-
-def revoke_token(token: str, expires_in: int):
-    redis_client.setex(f"revoked:{token}", expires_in, "1")
-
-
-def is_token_revoked(token: str) -> bool:
-    return redis_client.exists(f"revoked:{token}")
-```
-
-## Complete Example
-
-**main.py**
-
-```python
-from fastapi import FastAPI, Depends
-from app.routers import auth
-from app.routers.auth import get_current_user
-from app.schemas.auth import UserResponse
-
-app = FastAPI(title="JWT Auth API")
-
-app.include_router(auth.router)
-
-
-@app.get("/")
-def root():
-    return {"message": "Welcome to the API"}
-
-
-@app.get("/protected", response_model=dict)
-def protected_route(current_user: UserResponse = Depends(get_current_user)):
-    return {
-        "message": "This is protected content",
-        "user": current_user.username
-    }
-```
-
-## Testing
-
-### Register
-
-```bash
-curl -X POST http://localhost:8000/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username": "john", "email": "john@example.com", "password": "secret123"}'
-```
-
-### Login
-
-```bash
-curl -X POST http://localhost:8000/auth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=john&password=secret123"
-```
-
-### Access Protected Route
-
-```bash
-curl http://localhost:8000/protected \
-  -H "Authorization: Bearer <access_token>"
-```
-
-### Refresh Token
-
-```bash
-curl -X POST http://localhost:8000/auth/refresh \
-  -H "Content-Type: application/json" \
-  -d '{"refresh_token": "<refresh_token>"}'
-```
-
-## Security Best Practices
-
-### Token Security
-
-| Practice | Description |
-|----------|-------------|
-| Short expiration | Access tokens: 15-30 minutes |
-| Secure secret | Use strong, random secret key |
-| HTTPS only | Never transmit tokens over HTTP |
-| HttpOnly cookies | For web apps, store in HttpOnly cookies |
-
-### Environment Variables
-
-```python
-# .env
-SECRET_KEY=your-very-long-and-random-secret-key-here
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-```
-
-### Token Storage (Client-Side)
-
-| Storage | Security | Use Case |
-|---------|----------|----------|
-| Memory | High | SPA, short sessions |
-| HttpOnly Cookie | High | Web applications |
-| localStorage | Low | Not recommended |
-| sessionStorage | Medium | Single tab sessions |
-
-## Common Issues
-
-### Token Expired
-
-```python
-from jose import ExpiredSignatureError
-
-try:
-    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-except ExpiredSignatureError:
-    raise HTTPException(401, "Token has expired")
-```
-
-### Invalid Token
-
-```python
-from jose import JWTError
-
-try:
-    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-except JWTError:
-    raise HTTPException(401, "Invalid token")
-```
-
-## Summary
-
-| Component | Purpose |
-|-----------|---------|
-| Access Token | Short-lived authentication |
-| Refresh Token | Get new access tokens |
-| OAuth2PasswordBearer | Extract token from header |
-| jwt.encode/decode | Create/validate tokens |
-| Blacklist | Token revocation |
+- [OAuth2 Password + JWT](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/)
+- [Simple OAuth2 with Password and Bearer](https://fastapi.tiangolo.com/tutorial/security/simple-oauth2/)
+- [Security Tools](https://fastapi.tiangolo.com/reference/security/)
 
 ## Next Steps
 
 - [Role-Based Access](./12-rbac.md) - Permission control
-- [Project Architecture](./13-architecture.md) - Structuring large apps
+- [Project Architecture](./13-architecture.md) - Structuring larger apps
 
 ---
 

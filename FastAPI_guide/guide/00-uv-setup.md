@@ -1,470 +1,267 @@
 # Fast Project Setup with uv (2026 Best Practices)
 
-This chapter covers modern FastAPI project setup using `uv`, the ultra-fast Python package manager that's 10-100x faster than pip.
+This chapter covers modern FastAPI project setup using uv, including lockfiles, dependency groups, and reproducible installs.
 
-## Why uv for FastAPI?
+## Quick Start
 
-| Feature | uv | pip |
-|---------|-----|-----|
-| **Installation Speed** | 10-100x faster | Standard speed |
-| **Development Server** | 2-3x faster startup | Normal startup |
-| **Dependency Resolution** | Excellent, no conflicts | Basic, occasional conflicts |
-| **Project Management** | Built-in project init | Manual setup |
-| **Reproducibility** | Lock files included | Manual requirements.txt |
-| **Memory Usage** | 30-50% less | Higher memory usage |
+```bash
+uv init my-api
+cd my-api
+uv add "fastapi[standard]"
+uv run fastapi dev main.py
+```
+
+## Why uv
+
+- `uv init` creates a ready-to-run project scaffold with `pyproject.toml` and `main.py`.
+- `uv run`, `uv sync`, and `uv lock` keep your environment and lockfile in sync.
+- `uv.lock` provides reproducible installs across machines.
 
 ## Installing uv
 
-### Method 1: Install Script (Recommended)
+### Standalone installer (recommended)
 
 ```bash
 # Linux/macOS
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Windows (PowerShell)
+# Windows PowerShell
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-### Method 2: pip install
+### Package managers
 
 ```bash
-# Install with pip (slower, universal)
+# macOS
+brew install uv
+
+# Windows
+winget install --id=astral-sh.uv -e
+scoop install main/uv
+
+# Python
+pipx install uv
 pip install uv
 ```
 
-### Method 3: Package Managers
+## Create a FastAPI Project
 
 ```bash
-# macOS with Homebrew
-brew install uv
-
-# Arch Linux
-pacman -S uv
-
-# Windows with Scoop
-scoop install uv
-```
-
-## Creating FastAPI Projects with uv
-
-### Option 1: Project Template (Fastest)
-
-```bash
-# Create FastAPI project from template
-uv init --template fastapi my-api
+uv init my-api
 cd my-api
-
-# Install dependencies automatically
-uv sync
+uv add "fastapi[standard]"
 ```
 
-**Generated Structure:**
+`uv init` creates the project files below. The `.venv` and `uv.lock` are created the first time you run `uv run`, `uv sync`, or `uv lock`.
+
 ```
 my-api/
 ├── .gitignore
 ├── .python-version
-├── pyproject.toml
-├── uv.lock
 ├── README.md
+├── main.py
+├── pyproject.toml
+├── .venv/          # Created on first run/sync/lock
+└── uv.lock         # Created on first run/sync/lock
+```
+
+## FastAPI-Friendly Layout (Recommended)
+
+For anything beyond a toy app, move code into a package.
+
+```
+my-api/
 ├── app/
 │   ├── __init__.py
 │   └── main.py
-└── tests/
-    ├── __init__.py
-    └── test_main.py
+├── tests/
+│   └── test_health.py
+├── pyproject.toml
+└── uv.lock
 ```
 
-### Option 2: Manual Setup (Full Control)
+Then run:
 
 ```bash
-# Create new project
-mkdir my-fastapi-app
-cd my-fastapi-app
-
-# Initialize with uv
-uv init
-
-# Add FastAPI dependencies
-uv add "fastapi[standard]"
-uv add httpx pytest pytest-asyncio
-
-# Add optional packages
-uv add sqlalchemy alembic  # For database
-uv add redis             # For caching
-uv add celery            # For background tasks
+uv run fastapi dev app/main.py
 ```
 
-## Advanced uv Configuration
-
-### pyproject.toml Optimization
+## pyproject.toml Baseline
 
 ```toml
 [project]
-name = "my-fastapi-app"
+name = "my-api"
 version = "0.1.0"
-description = "Modern FastAPI application with uv"
-authors = [
-    {name = "Your Name", email = "your.email@example.com"},
-]
+description = "FastAPI service"
+readme = "README.md"
+requires-python = ">=3.10"
 dependencies = [
-    "fastapi[standard] >=0.128.0",
-    "pydantic >=2.10.0",
-    "uvicorn[standard] >=0.32.0",
+    "fastapi[standard]",
+    "pydantic-settings",
 ]
-requires-python = ">=3.9"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "pytest >=8.0.0",
-    "pytest-asyncio >=0.24.0",
-    "pytest-cov >=4.0.0",
-    "httpx >=0.28.0",
-    "black >=24.0.0",
-    "ruff >=0.5.0",
-    "mypy >=1.10.0",
-]
-database = [
-    "sqlalchemy >=2.0.0",
-    "alembic >=1.13.0",
-    "psycopg2-binary >=2.9.0",
-]
-ai = [
-    "openai >=1.30.0",
-    "anthropic >=0.8.0",
-    "tiktoken >=0.7.0",
-]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.uv]
-dev-dependencies = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+    "pytest-cov",
     "ruff",
-    "black",
     "mypy",
 ]
 
-[tool.uv.sources]
-# Custom package sources if needed
-# my-package = { workspace = true }
-
-[tool.black]
-line-length = 88
-target-version = ['py39']
-
-[tool.ruff]
-line-length = 88
-select = ["E", "F", "I"]
-target-version = "py39"
-
-[tool.mypy]
-python_version = "3.9"
-warn_return_any = true
-warn_unused_configs = true
+[project.optional-dependencies]
+database = [
+    "sqlalchemy",
+    "alembic",
+    "asyncpg",
+]
 ```
 
-## Development Workflow with uv
-
-### Installing Dependencies
+## Locking and Syncing
 
 ```bash
-# Install from pyproject.toml
+# Create or update uv.lock
+uv lock
+
+# Sync environment to lockfile (removes extraneous packages by default)
 uv sync
 
-# Install specific optional groups
-uv sync --extra dev
+# Require the lockfile to be up to date
+uv sync --locked
+
+# Do not update uv.lock automatically
+uv sync --frozen
+```
+
+### Development dependencies
+
+- uv reads development dependencies from `[dependency-groups]`.
+- The `dev` group is synced by default.
+- Exclude it with `--no-dev`.
+
+```bash
+uv sync --no-dev
+uv sync --only-dev
+```
+
+### Optional dependencies (extras)
+
+- Extras live in `[project.optional-dependencies]`.
+- They are not installed by default.
+
+```bash
 uv sync --extra database
-uv sync --extra dev,database
-
-# Add new dependency
-uv add "pydantic-settings>=2.5.0"
-
-# Add development dependency
-uv add --dev "pytest-mock>=3.14.0"
-
-# Remove dependency
-uv remove sqlalchemy
+uv sync --all-extras
 ```
 
-### Running Commands
+### Running commands
+
+`uv run` keeps your environment in sync before executing your command.
 
 ```bash
-# Run FastAPI app
-uv run uvicorn app.main:app --reload
-
-# Run with custom settings
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# Run tests
+uv run fastapi dev app/main.py
 uv run pytest
-uv run pytest tests/ -v --cov=app
-
-# Run type checking
-uv run mypy app/
-
-# Code formatting
-uv run black .
-uv run ruff check --fix .
+uv run python -c "import fastapi; print(fastapi.__version__)"
 ```
 
-### Virtual Environment Management
+## Managing Dependencies
 
 ```bash
-# Create virtual environment explicitly
-uv venv
+# Add and remove packages
+uv add "httpx>=0.27"
+uv remove httpx
 
-# Activate (works like traditional venv)
-source .venv/bin/activate  # Linux/macOS
-# .venv\Scripts\activate  # Windows
+# Add from requirements.txt
+uv add -r requirements.txt
 
-# Remove environment
-rm -rf .venv
-
-# Python version management
-uv python install 3.12.0  # Install specific Python
-uv python pin 3.12.0       # Set as project default
+# Upgrade a specific package
+uv lock --upgrade-package fastapi
 ```
 
-## Performance Optimization with uv
-
-### Caching Configuration
+## Python Version Management
 
 ```bash
-# Configure cache directory (default: ~/.cache/uv)
-export UV_CACHE_DIR=/path/to/cache
-
-# Clear cache
-uv cache clean
-
-# Show cache info
-uv cache info
-
-# Limit cache size
-uv cache prune --bytes=1GB
+uv python install 3.12
+uv python pin 3.12
 ```
 
-### Parallel Installation
-
-```bash
-# Install packages in parallel (default)
-uv sync
-
-# Control parallelism
-uv sync --workers 4
-
-# Network optimization
-uv sync --offline  # Use cache only
-uv sync --index-strategy unsafe-best-match  # Faster index lookup
-```
-
-## Production Deployment with uv
-
-### Docker Integration
-
-```dockerfile
-# Multi-stage Docker with uv
-FROM python:3.12-slim AS base
-
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv
-
-# Project dependencies
-FROM base AS dependencies
-WORKDIR /app
-COPY pyproject.toml uv.lock ./
-
-# Install dependencies
-RUN /uv/uv sync --frozen --no-dev
-
-# Application stage
-FROM base AS app
-WORKDIR /app
-
-# Copy uv and dependencies
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv
-COPY --from=dependencies /app /app
-
-# Copy application code
-COPY app/ ./app/
-
-# Runtime user
-RUN adduser --disabled-password --gecos "" app
-USER app
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s \
-  CMD curl -f http://localhost:8000/health || exit 1
-
-EXPOSE 8000
-
-# Run application
-CMD ["/uv/uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-### CI/CD Integration
+## GitHub Actions (CI)
 
 ```yaml
-# .github/workflows/ci.yml
 name: CI
 on: [push, pull_request]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up uv
-      uses: astral-sh/setup-uv@v3
-      
-    - name: Set up Python
-      run: uv python pin 3.12
-      
-    - name: Install dependencies
-      run: uv sync --all-extras --dev
-      
-    - name: Run tests
-      run: uv run pytest --cov=app
-      
-    - name: Type check
-      run: uv run mypy app/
-      
-    - name: Lint
-      run: uv run ruff check .
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: uv sync --all-extras
+      - name: Run tests
+        run: uv run pytest
 ```
 
-## Advanced uv Features
+## Docker Integration
 
-### Workspace Management
+```dockerfile
+FROM python:3.12-slim
 
-```toml
-# pyproject.toml with workspace
-[tool.uv.workspace]
-members = [
-    "app",
-    "packages/*",
-    "shared",
-]
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-[tool.uv.sources]
-# Local package development
-my-local-package = { workspace = true }
+WORKDIR /app
+
+# Install dependencies first
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-install-project
+
+# Copy app and install it
+COPY . /app
+RUN uv sync --locked
+
+EXPOSE 8000
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
-### Custom Index Configuration
+Best practice: add `.venv` to `.dockerignore` so your local environment is not copied into the image.
+
+## Migration from pip
 
 ```bash
-# Use custom package index
-uv sync --index-url https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl
-
-# Configure multiple indexes
-uv sync --index-strategy unsafe-best-match
-```
-
-### Dependency Visualization
-
-```bash
-# Show dependency tree
-uv tree
-
-# Show outdated packages
-uv pip list --outdated
-
-# Security audit
-uv pip audit
-
-# Generate requirements.txt (for compatibility)
-uv pip compile requirements.txt > requirements.txt
-```
-
-## Migration from pip to uv
-
-### Step-by-Step Migration
-
-```bash
-# 1. Backup current environment
-pip freeze > requirements-backup.txt
-
-# 2. Initialize uv project
+# Create a project
 uv init
 
-# 3. Import from requirements.txt
-uv add -r requirements-backup.txt
+# Import requirements.txt
+uv add -r requirements.txt
 
-# 4. Test installation
+# Create the lockfile and environment
 uv sync
-
-# 5. Update scripts and workflows
-# Replace 'python' with 'uv run python'
-# Replace 'pip install' with 'uv add'
 ```
-
-### Common Migration Issues
-
-| Issue | pip Command | uv Equivalent | Solution |
-|-------|-------------|---------------|-----------|
-| **Install editable package** | `pip install -e .` | `uv add --editable .` | Use `--editable` flag |
-| **Install specific version** | `pip install package==1.2.3` | `uv add "package==1.2.3"` | Same syntax |
-| **Install from VCS** | `pip install git+https://...` | `uv add "git+https://..."` | Same syntax |
-| **User install** | `pip install --user` | Not supported | Use virtual environment |
 
 ## Best Practices
 
-### Do's
+- Use `uv add` and `uv remove` instead of editing dependencies by hand.
+- Commit `uv.lock` for reproducible builds.
+- Avoid mixing `pip install` with uv-managed projects.
+- Use `uv sync --locked` in CI and containers to enforce the lockfile.
 
-```bash
-# ✅ Use project templates
-uv init --template fastapi my-project
+## References
 
-# ✅ Leverage optional dependencies
-uv add fastapi "sqlalchemy[postgresql]" "pytest[cov]"
-
-# ✅ Use lock files for reproducibility
-uv sync --frozen  # Use exact lock versions
-
-# ✅ Configure proper Python version
-uv python pin 3.12.0
-
-# ✅ Use workspace for monorepos
-[tool.uv.workspace]
-members = ["packages/*"]
-```
-
-### Don'ts
-
-```bash
-# ❌ Mix pip and uv in same project
-# Use only one package manager
-
-# ❌ Ignore lock files
-# Always commit uv.lock to version control
-
-# ❌ Use global Python packages
-# Always use project-specific environments
-
-# ❌ Skip version pinning
-# Always specify Python version in pyproject.toml
-```
-
-## Performance Benchmarks
-
-Typical performance improvements with uv:
-
-| Operation | pip | uv | Improvement |
-|------------|------|-----|-------------|
-| **FastAPI install** | 45s | 3s | **15x faster** |
-| **Dependencies sync** | 120s | 8s | **15x faster** |
-| **Development server start** | 2.3s | 0.8s | **3x faster** |
-| **Test suite run** | 35s | 12s | **3x faster** |
+- [uv Documentation](https://docs.astral.sh/uv/)
+- [uv Projects](https://docs.astral.sh/uv/concepts/projects/)
+- [uv Syncing](https://docs.astral.sh/uv/concepts/projects/syncing/)
+- [uv Docker Integration](https://docs.astral.sh/uv/guides/integration/docker/)
+- [setup-uv GitHub Action](https://github.com/astral-sh/setup-uv)
 
 ## Next Steps
 
-- [Introduction](./01-introduction.md) - Basic FastAPI concepts
-- [Routing](./02-routing.md) - API routing and endpoints
-- [Data Validation](./03-data-validation.md) - Pydantic v2 validation
+- [Introduction](./01-introduction.md) - FastAPI basics
+- [Routing](./02-routing.md) - HTTP methods and parameters
 
 ---
 
-[Back to Index](./README.md) | [Next: Routing](./02-routing.md)
+[Back to Index](./README.md) | [Next: Introduction](./01-introduction.md)

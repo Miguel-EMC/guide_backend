@@ -59,7 +59,7 @@ sqlalchemy.url = postgresql://user:password@localhost:5432/dbname
 ```python
 # alembic/env.py
 from logging.config import fileConfig
-from sqlalchemy import pool
+from sqlalchemy import pool, engine_from_config
 from sqlalchemy.engine import Connection
 from alembic import context
 
@@ -586,4 +586,4 @@ target_metadata = Base.metadata
 
 ---
 
-[Previous: CRUD Operations](./08-crud-operations.md) | [Back to Index](./README.md) | [Next: Database Relationships](./09-database-relationships.md)
+[Previous: Database Relationships](./09-database-relationships.md) | [Back to Index](./README.md) | [Next: Authentication Basics](./10-authentication-basics.md)
