@@ -1,210 +1,127 @@
-# 14 - Connecting to a Database with `database/sql`
+# 14 - Connecting to a Database with database/sql
 
-Nearly every backend application needs to interact with a database. Go provides a clean, generic SQL interface through the built-in `database/sql` package. This package provides a standard way to work with SQL databases, but it doesn't provide a database driver itself. To connect to a specific database, you need to import a third-party driver.
+Go's `database/sql` package provides a standard API for SQL databases. You bring a driver like PostgreSQL or MySQL.
 
----
+## Goals
 
-## 1. Installing a Database Driver
+- Connect to PostgreSQL with `database/sql`
+- Use context and prepared statements
+- Configure connection pooling
 
-You need to choose and install a driver for your specific database. For this guide, we'll use the popular `lib/pq` driver for PostgreSQL.
+## 1. Install a Driver
 
-1.  **Add the driver dependency** to your project:
-    ```bash
-    go get github.com/lib/pq
-    ```
-2.  **Import the driver** in your Go code. You typically import the driver with a blank identifier (`_`) because you only need to run its initialization code, which registers it with the `database/sql` package. You won't be calling any functions from the driver directly.
+PostgreSQL (pgx stdlib):
 
-    ```go
-    import (
-        "database/sql"
-        _ "github.com/lib/pq" // The PostgreSQL driver
-    )
-    ```
+```bash
+go get github.com/jackc/pgx/v5/stdlib
+```
 
----
-
-## 2. Connecting to the Database
-
-You connect to a database using `sql.Open`. This function returns a `*sql.DB` object, which represents a pool of database connections.
+## 2. Open a Connection
 
 ```go
-package main
-
 import (
+    "context"
     "database/sql"
-    "fmt"
-    "log"
+    "time"
 
-    _ "github.com/lib/pq"
+    _ "github.com/jackc/pgx/v5/stdlib"
 )
 
-const (
-    host     = "localhost"
-    port     = 5432
-    user     = "postgres"
-    password = "yourpassword"
-    dbname   = "yourdb"
-)
-
-func main() {
-    // Create the connection string
-    psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-        host, port, user, password, dbname)
-
-    // Open a connection pool
-    db, err := sql.Open("postgres", psqlInfo)
+func openDB(dsn string) (*sql.DB, error) {
+    db, err := sql.Open("pgx", dsn)
     if err != nil {
-        log.Fatalf("Error opening database: %v", err)
-    }
-    // Ensure the connection is closed when the main function exits
-    defer db.Close()
-
-    // Verify the connection is alive
-    err = db.Ping()
-    if err != nil {
-        log.Fatalf("Error connecting to database: %v", err)
+        return nil, err
     }
 
-    fmt.Println("Successfully connected to the database!")
-    // ... you can now use 'db' to run queries
+    db.SetMaxOpenConns(25)
+    db.SetMaxIdleConns(5)
+    db.SetConnMaxLifetime(30 * time.Minute)
+
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+
+    if err := db.PingContext(ctx); err != nil {
+        return nil, err
+    }
+
+    return db, nil
 }
 ```
 
----
-
-## 3. Querying for Data (SELECT)
-
-### Querying a Single Row (`QueryRow`)
-Use `QueryRow` when you expect exactly one result.
+## 3. Querying Data
 
 ```go
+import (
+    "context"
+    "database/sql"
+    "errors"
+)
+
 type User struct {
-    ID    int
+    ID    int64
     Name  string
     Email string
 }
 
-var user User
-err := db.QueryRow("SELECT id, name, email FROM users WHERE id = $1", 1).Scan(&user.ID, &user.Name, &user.Email)
-if err != nil {
-    if err == sql.ErrNoRows {
-        // Handle case where no user was found
-        fmt.Println("User not found")
-    } else {
-        log.Fatalf("Query failed: %v", err)
-    }
-}
-fmt.Printf("Found user: %+v\n", user)
-```
-The `.Scan()` method copies the columns from the matched row into the destination variables.
+func getUser(ctx context.Context, db *sql.DB, id int64) (*User, error) {
+    row := db.QueryRowContext(ctx, "SELECT id, name, email FROM users WHERE id=$1", id)
 
-### Querying Multiple Rows (`Query`)
-Use `Query` when you expect multiple results.
-
-```go
-rows, err := db.Query("SELECT id, name FROM users WHERE is_active = true")
-if err != nil {
-    log.Fatalf("Query failed: %v", err)
-}
-defer rows.Close() // Important to close the rows iterator
-
-var users []User
-for rows.Next() {
     var u User
-    if err := rows.Scan(&u.ID, &u.Name); err != nil {
-        log.Fatalf("Failed to scan row: %v", err)
+    if err := row.Scan(&u.ID, &u.Name, &u.Email); err != nil {
+        if errors.Is(err, sql.ErrNoRows) {
+            return nil, nil
+        }
+        return nil, err
     }
-    users = append(users, u)
-}
-// Check for errors from iterating over rows
-if err := rows.Err(); err != nil {
-    log.Fatalf("Error iterating rows: %v", err)
-}
 
-fmt.Printf("Found %d active users.\n", len(users))
+    return &u, nil
+}
 ```
 
----
-
-## 4. Modifying Data (`INSERT`, `UPDATE`, `DELETE`)
-
-For statements that modify data but don't return rows, use `db.Exec()`.
+## 4. Executing Statements
 
 ```go
-// Example: INSERT
-result, err := db.Exec(
-    "INSERT INTO users (name, email) VALUES ($1, $2)",
-    "John Doe", "john.doe@example.com",
+import "context"
+
+func createUser(ctx context.Context, db *sql.DB, u User) (int64, error) {
+    var id int64
+    err := db.QueryRowContext(
+        ctx,
+        "INSERT INTO users(name, email) VALUES ($1,$2) RETURNING id",
+        u.Name, u.Email,
+    ).Scan(&id)
+
+    return id, err
+}
+```
+
+## 5. Transactions
+
+```go
+import (
+    "context"
+    "database/sql"
 )
+
+tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 if err != nil {
-    log.Fatalf("Insert failed: %v", err)
+    return err
 }
 
-// Get the ID of the newly inserted row
-lastInsertID, err := result.LastInsertId()
-// Note: LastInsertId() is not supported by all drivers, including lib/pq.
-// For PostgreSQL, you would typically use `RETURNING id` in your query.
+if _, err := tx.ExecContext(ctx, "UPDATE users SET name=$1 WHERE id=$2", name, id); err != nil {
+    _ = tx.Rollback()
+    return err
+}
 
-// Get the number of rows affected
-rowsAffected, err := result.RowsAffected()
-fmt.Printf("%d row(s) affected.\n", rowsAffected)
+return tx.Commit()
 ```
+
+## Tips
+
+- Always use context with queries.
+- Configure the connection pool for your workload.
+- Handle `sql.ErrNoRows` explicitly.
 
 ---
 
-## 5. Prepared Statements
-
-Prepared statements are a way to execute the same statement multiple times with different parameters. They offer better performance and are a crucial defense against **SQL injection attacks**.
-
-```go
-stmt, err := db.Prepare("SELECT id, name FROM users WHERE id = $1")
-if err != nil {
-    log.Fatal(err)
-}
-defer stmt.Close()
-
-// Execute the prepared statement multiple times
-rows, err := stmt.Query(1)
-// ... scan rows
-
-rows, err = stmt.Query(2)
-// ... scan rows
-```
-
----
-
-## 6. Transactions
-
-Transactions allow you to run a group of statements as a single, atomic unit. If any statement in the group fails, the entire transaction can be rolled back.
-
-```go
-// Start a new transaction
-tx, err := db.Begin()
-if err != nil {
-    log.Fatal(err)
-}
-
-// Defer a rollback in case of panic or early return
-defer tx.Rollback() // The rollback will be ignored if the transaction is committed
-
-// Execute statements within the transaction
-_, err = tx.Exec("UPDATE accounts SET balance = balance - 100 WHERE id = 1")
-if err != nil {
-    log.Fatal(err) // This will trigger the deferred rollback
-}
-
-_, err = tx.Exec("UPDATE accounts SET balance = balance + 100 WHERE id = 2")
-if err != nil {
-    log.Fatal(err) // This will trigger the deferred rollback
-}
-
-// If all statements were successful, commit the transaction
-if err := tx.Commit(); err != nil {
-    log.Fatal(err)
-}
-
-fmt.Println("Transaction successful!")
-```
-This ensures that the money is never "lost" if one of the `UPDATE` statements fails.
-
-Working with `database/sql` directly provides a solid foundation for understanding how Go interacts with databases, even when you later choose to use an ORM or query builder.
+[Previous: Working with JSON](./13-working-with-json.md) | [Back to Index](./README.md) | [Next: Intro to Gin ->](./15-intro-to-gin.md)

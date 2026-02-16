@@ -1,186 +1,104 @@
 # 16 - Gin Routing and Validation
 
-Gin significantly simplifies HTTP routing and request data validation compared to the standard `net/http` package. It provides a powerful router that supports parameters, groups, and a robust data binding and validation engine, essential for building robust RESTful APIs.
+Gin provides expressive routing and a validation system built on `validator/v10`.
 
----
+## Goals
 
-## 1. Basic Routing
+- Define routes and groups
+- Bind and validate requests
+- Return consistent errors
 
-Gin's router allows you to register handlers for specific HTTP methods and paths.
+## 1. Routing Basics
 
 ```go
-package main
+import "github.com/gin-gonic/gin"
 
-import (
-    "net/http"
-    "github.com/gin-gonic/gin"
-)
-
-func main() {
-    router := gin.Default()
-
-    // GET requests
-    router.GET("/ping", func(c *gin.Context) {
-        c.JSON(http.StatusOK, gin.H{"message": "pong"})
-    })
-
-    // POST requests
-    router.POST("/users", func(c *gin.Context) {
-        c.JSON(http.StatusCreated, gin.H{"message": "User created"})
-    })
-
-    // PUT requests
-    router.PUT("/products", func(c *gin.Context) {
-        c.JSON(http.StatusOK, gin.H{"message": "Product updated"})
-    })
-
-    // DELETE requests
-    router.DELETE("/items", func(c *gin.Context) {
-        c.JSON(http.StatusOK, gin.H{"message": "Item deleted"})
-    })
-
-    // Handle all HTTP methods for a path
-    router.Any("/catchall", func(c *gin.Context) {
-        c.JSON(http.StatusOK, gin.H{"message": "Caught by Any method"})
-    })
-
-    router.Run(":8080")
-}
+r.GET("/users", listUsers)
+r.GET("/users/:id", getUser)
+r.POST("/users", createUser)
 ```
 
----
-
-## 2. Route Parameters
-
-Gin allows you to define routes with parameters (e.g., to fetch a specific user by ID).
+## 2. Route Groups
 
 ```go
-router.GET("/users/:id", func(c *gin.Context) {
-    id := c.Param("id") // Get the parameter from the URL path
-    c.JSON(http.StatusOK, gin.H{"user_id": id})
-})
+import "github.com/gin-gonic/gin"
 
-// Wildcard parameters (e.g., for serving files)
-router.GET("/files/*filepath", func(c *gin.Context) {
-    filepath := c.Param("filepath")
-    c.JSON(http.StatusOK, gin.H{"path": filepath})
-})
+api := r.Group("/api/v1")
+api.Use(authMiddleware())
+api.GET("/posts", listPosts)
 ```
 
----
-
-## 3. Query String Parameters
-
-You can retrieve query parameters from the URL (e.g., `/search?name=john&age=30`).
+## 3. Query and Path Params
 
 ```go
-router.GET("/search", func(c *gin.Context) {
-    name := c.Query("name")             // Get parameter 'name'. Empty string if not present.
-    age := c.DefaultQuery("age", "0")   // Get parameter 'age', default to "0" if not present.
+import "github.com/gin-gonic/gin"
 
-    c.JSON(http.StatusOK, gin.H{"name": name, "age": age})
-})
+id := c.Param("id")
+page := c.DefaultQuery("page", "1")
 ```
 
----
-
-## 4. Grouping Routes
-
-You can group routes to share common middleware or prefixes. This is very useful for organizing your API by versions or modules.
+## 4. JSON Binding and Validation
 
 ```go
-// API version 1 group
-v1 := router.Group("/api/v1")
-{
-    v1.GET("/posts", func(c *gin.Context) { /* ... */ })
-    v1.POST("/posts", func(c *gin.Context) { /* ... */ })
-    v1.GET("/users", func(c *gin.Context) { /* ... */ })
-}
+import "github.com/gin-gonic/gin"
 
-// Another API version group
-v2 := router.Group("/api/v2")
-{
-    v2.GET("/products", func(c *gin.Context) { /* ... */ })
-}
-```
-
----
-
-## 5. Data Binding and Validation
-
-Gin uses the `go-playground/validator` package for powerful data validation. You can bind request data (JSON, XML, form-data, query parameters, URI parameters) directly into a Go struct and validate it using `binding` tags.
-
-### A. Binding JSON Request Body
-
-```go
-package main
-
-import (
-    "net/http"
-    "github.com/gin-gonic/gin"
-)
-
-// Define a struct for the incoming JSON data
 type CreateUserRequest struct {
-    Name     string `json:"name" binding:"required,min=3,max=50"`
-    Email    string `json:"email" binding:"required,email"`
-    Password string `json:"password" binding:"required,min=6"`
-    Age      int    `json:"age,omitempty" binding:"omitempty,gte=18"` // Optional, must be >= 18
+    Name  string `json:"name" binding:"required,min=2"`
+    Email string `json:"email" binding:"required,email"`
 }
 
-func createUserHandler(c *gin.Context) {
+func createUser(c *gin.Context) {
     var req CreateUserRequest
-    // c.ShouldBindJSON tries to bind the JSON body into the struct.
-    // It returns an error if binding or validation fails.
     if err := c.ShouldBindJSON(&req); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        c.JSON(400, gin.H{"error": err.Error()})
         return
     }
 
-    // Data is valid, proceed with business logic
-    c.JSON(http.StatusCreated, gin.H{"message": "User created successfully", "user": req})
-}
-
-func main() {
-    router := gin.Default()
-    router.POST("/users", createUserHandler)
-    router.Run(":8080")
+    c.JSON(201, gin.H{"id": 1, "name": req.Name})
 }
 ```
-**Testing with `curl`**:
-```bash
-# Valid request
-curl -X POST -H "Content-Type: application/json" -d '{"name":"Alice","email":"alice@example.com","password":"securepassword","age":25}' http://localhost:8080/users
 
-# Invalid request (missing name, invalid email, age too low)
-curl -X POST -H "Content-Type: application/json" -d '{"email":"invalid","password":"short","age":15}' http://localhost:8080/users
-```
+## 5. Custom Validation
 
-### B. Common Binding/Validation Tags
--   `binding:"required"`: Field must be present and not its zero value.
--   `binding:"min=X"`, `binding:"max=Y"`: Minimum/maximum length or value.
--   `binding:"email"`, `binding:"url"`, `binding:"numeric"`: Specific format validation.
--   `binding:"omitempty"`: If the field is missing, validation rules are skipped.
--   `binding:"gte=X"`, `binding:"lte=Y"`: Greater than or equal to, less than or equal to.
--   `binding:"oneof=value1 value2"`: Field must be one of the specified values.
-
-### C. Binding Query String to Struct
 ```go
-type UserSearch struct {
-    Name  string `form:"name" binding:"omitempty"`
-    Email string `form:"email" binding:"omitempty,email"`
-    Page  int    `form:"page" binding:"omitempty,min=1"`
-}
+import (
+    "github.com/gin-gonic/gin/binding"
+    "github.com/go-playground/validator/v10"
+)
 
-router.GET("/users/search", func(c *gin.Context) {
-    var search UserSearch
-    if err := c.ShouldBindQuery(&search); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-        return
+var validate = func() {
+    if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
+        _ = v.RegisterValidation("role", func(fl validator.FieldLevel) bool {
+            return fl.Field().String() == "admin" || fl.Field().String() == "user"
+        })
     }
-    c.JSON(http.StatusOK, gin.H{"message": "Search parameters", "params": search})
-})
+}
 ```
-Test with `curl http://localhost:8080/users/search?name=bob&page=2`.
 
-Gin's routing and validation features are powerful tools that simplify the development of robust and secure APIs.
+Use in a struct tag:
+
+```go
+type RoleRequest struct {
+    Role string `json:"role" binding:"required,role"`
+}
+```
+
+## 6. Consistent Error Responses
+
+```go
+import "github.com/gin-gonic/gin"
+
+func validationError(err error) gin.H {
+    return gin.H{"message": "validation_failed", "details": err.Error()}
+}
+```
+
+## Tips
+
+- Prefer struct validation over manual checks.
+- Return the same error shape across endpoints.
+- Keep controllers thin and delegate to services.
+
+---
+
+[Previous: Intro to Gin](./15-intro-to-gin.md) | [Back to Index](./README.md) | [Next: Gin Middleware ->](./17-gin-middleware.md)

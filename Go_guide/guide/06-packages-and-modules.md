@@ -1,115 +1,94 @@
 # 06 - Packages and Modules
 
-Organizing your code and managing external dependencies are crucial aspects of software development. Go uses **packages** for code organization and **modules** for dependency management. Understanding these concepts is fundamental to building any non-trivial Go application.
+Go uses packages for code organization and modules for dependency management. This chapter focuses on the modern Go module workflow.
 
----
+## Goals
 
-## 1. Packages: Code Organization
+- Structure code with packages
+- Manage dependencies with modules
+- Understand module versions and workspaces
 
-A Go program is made up of packages. A package is a collection of source files in the same directory that are compiled together.
+## 1. Packages
 
-### A. The `package` Keyword
-Every Go source file must belong to a package. The `package` keyword specifies the package name.
-
--   **`package main`**: This is a special package that defines a standalone executable program. The `main` package must contain a `main()` function, which is the entry point of the program.
--   **Named Packages**: All other packages are library packages. Their name should typically be the same as the directory they reside in.
-
-### B. Creating a Custom Package
-Let's create a simple utility package.
-
-1.  **Create a directory for your package**:
-    ```bash
-    # Assuming you are in your Go_guide/guide/ directory
-    mkdir mypackage
-    cd mypackage
-    touch mathutils.go
-    ```
-2.  **Define the package and add functions**:
-    ```go
-    // mypackage/mathutils.go
-    package mypackage // Package name is 'mypackage'
-
-    // Add returns the sum of two integers.
-    func Add(a, b int) int {
-        return a + b
-    }
-
-    // subtract returns the difference of two integers. (Not exported)
-    func subtract(a, b int) int {
-        return a - b
-    }
-    ```
-
-### C. Exported vs. Unexported Names
-In Go, visibility is controlled by the case of the first letter of an identifier (function name, variable name, struct field, etc.):
-
--   **Exported (Public)**: If an identifier starts with an **uppercase** letter, it is exported and can be accessed from outside its package. (e.g., `Add`).
--   **Unexported (Private)**: If an identifier starts with a **lowercase** letter, it is unexported and can only be accessed from within the same package. (e.g., `subtract`).
-
-### D. Importing Packages
-To use functions or types from another package, you must `import` it.
+A package is a directory of `.go` files that compile together.
 
 ```go
-// my_app/main.go (assuming my_app is your main module)
-package main
+// internal/mathutil/add.go
+package mathutil
 
-import (
-    "fmt"
-    "example.com/my_app/mypackage" // Import your custom package
-    // "mypackage" if it's within the same module hierarchy
-)
-
-func main() {
-    result := mypackage.Add(5, 3) // Access the exported Add function
-    fmt.Println("Sum:", result) // Output: Sum: 8
-    // mypackage.subtract(5,3) // This would cause a compile-time error
+func Add(a, b int) int {
+    return a + b
 }
 ```
-The import path is typically the module path followed by the directory containing the package.
 
----
+Import a package by module path + directory:
 
-## 2. Go Modules: Dependency Management
-
-Go Modules are Go's dependency management system. A module is a collection of related Go packages.
-
-### A. The `go.mod` File
-The `go.mod` file defines a module. It contains:
--   `module path`: The module's identity (e.g., `github.com/yourusername/yourproject`).
--   `go version`: The minimum Go version required.
--   `require` directives: List of direct and indirect dependencies.
--   `replace` directives: (Optional) Used to replace a dependency with a local path or a different version.
-
-### B. Initializing a New Module
-When you start a new Go project, navigate to its root directory and initialize a module:
-```bash
-go mod init example.com/my_app
+```go
+import "example.com/myapp/internal/mathutil"
 ```
-This creates the `go.mod` file.
 
-### C. Adding and Updating Dependencies (`go get`)
-When you `import` a new package in your code that is not part of the standard library, Go will automatically download it the next time you run `go build` or `go run`.
-Alternatively, you can explicitly add a dependency:
+## 2. Exported vs Unexported
+
+- Names starting with uppercase are exported.
+- Lowercase names are package‑private.
+
+```go
+func Add(a, b int) int  // exported
+func subtract(a, b int) int // unexported
+```
+
+## 3. Initialize a Module
 
 ```bash
-go get github.com/gin-gonic/gin@v1.9.1 // Get a specific version
-go get github.com/gin-gonic/gin       // Get the latest compatible version
+go mod init example.com/myapp
 ```
-This command adds the dependency to your `go.mod` file and downloads it to your module cache.
 
-### D. Cleaning Up Dependencies (`go mod tidy`)
-The `go mod tidy` command adds any missing module requirements to `go.mod` and removes unused module requirements. It ensures your `go.mod` file is accurate and reflects the actual dependencies used by your code.
+This creates `go.mod`.
+
+## 4. Add Dependencies
+
+```bash
+go get github.com/gin-gonic/gin@v1.11.0
+```
+
+Go will update `go.mod` and `go.sum`.
+
+## 5. Clean Up Dependencies
 
 ```bash
 go mod tidy
 ```
 
-### E. Workspace Mode (`go work`)
-For projects involving multiple Go modules (e.g., a monorepo with several microservices, each as its own module), Go 1.18 introduced **Workspaces**.
+## 6. Semantic Import Versioning
 
--   **`go work init`**: Creates a `go.work` file.
--   **`go work use ./moduleA ./moduleB`**: Adds existing modules to the workspace.
+For major versions v2+:
 
-This allows you to work across multiple modules locally without needing `replace` directives in each `go.mod` file. The `go.work` file tells Go's tools how to find all the modules you're developing locally.
+```go
+import "github.com/example/lib/v2"
+```
 
-Packages and modules are foundational for building maintainable and scalable Go applications, allowing for clear separation of concerns and efficient dependency management. In the next guide, we'll delve into Go's data structures: arrays, slices, and maps.
+## 7. Local Development with Workspaces
+
+Use workspaces for multi‑module repos.
+
+```bash
+go work init ./service-a ./service-b
+```
+
+## 8. Replace Directives (Advanced)
+
+```go
+replace github.com/example/lib => ../lib
+```
+
+Use only for local development, not in production releases.
+
+## Tips
+
+- Keep packages small and cohesive.
+- Avoid circular dependencies.
+- Run `go mod tidy` before commits.
+
+---
+
+[Previous: Functions and Error Handling](./05-functions-and-error-handling.md) | [Back to Index](./README.md) | [Next: Arrays, Slices, and Maps ->](./07-arrays-slices-maps.md)

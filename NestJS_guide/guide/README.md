@@ -59,6 +59,10 @@ A complete, production-grade NestJS guide with step-by-step chapters, examples, 
 26. [Security Hardening](./26-security-hardening.md)
 27. [High-Scale Architecture](./27-high-scale-architecture.md)
 28. [Scaling and Cost Optimization](./28-scaling-cost-optimization.md)
+29. [Microservices](./29-microservices.md)
+30. [GraphQL](./30-graphql.md)
+31. [OAuth2 and Social Auth](./31-oauth2-social-auth.md)
+32. [OpenTelemetry](./32-opentelemetry.md)
 
 ---
 

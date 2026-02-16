@@ -1,38 +1,32 @@
 # 22 - Authentication with JWT
 
-Most APIs need a way to identify and authenticate users to protect routes and personalize responses. While session-based authentication is common for traditional web apps, modern APIs—especially those consumed by mobile apps or other services—typically use stateless authentication with **JSON Web Tokens (JWT)**.
+JWTs provide stateless authentication for APIs. This chapter shows how to issue and validate tokens securely in Go.
 
----
+## Goals
 
-## 1. What is a JWT?
+- Generate JWTs on login
+- Validate tokens in middleware
+- Keep secrets out of code
 
-A JWT is a compact, URL-safe standard for representing claims to be transferred between two parties. A JWT is a single string composed of three parts, separated by dots (`.`):
-
-1.  **Header**: Contains metadata about the token, like the signing algorithm used (e.g., HMAC, RSA).
-2.  **Payload**: Contains the "claims" or data, such as the user's ID, their roles, and an expiration time for the token.
-3.  **Signature**: A cryptographic signature created by hashing the header, payload, and a secret key known only to the server. This ensures that the token has not been tampered with.
-
-The server generates a JWT upon successful login and sends it to the client. The client then includes this JWT in the `Authorization` header of subsequent requests. The server can validate the token's signature without needing to store any session state, making the system **stateless**.
-
----
-
-## 2. Setting Up a JWT Library
-
-We'll use one of the most popular JWT libraries for Go.
+## 1. Install the JWT Library
 
 ```bash
 go get github.com/golang-jwt/jwt/v5
 ```
 
----
+## 2. Configuration
 
-## 3. Generating a JWT
-
-Let's create a login handler that validates a user (we'll use hardcoded values for this example) and returns a JWT.
+Load your secret from environment variables:
 
 ```go
-package main
+import "os"
 
+var jwtKey = []byte(os.Getenv("JWT_SECRET"))
+```
+
+## 3. Token Generation
+
+```go
 import (
     "net/http"
     "time"
@@ -40,9 +34,6 @@ import (
     "github.com/gin-gonic/gin"
     "github.com/golang-jwt/jwt/v5"
 )
-
-// In a real app, this would be in a secure config file or environment variable
-var jwtKey = []byte("my_secret_key")
 
 type LoginRequest struct {
     Username string `json:"username" binding:"required"`
@@ -52,151 +43,81 @@ type LoginRequest struct {
 func login(c *gin.Context) {
     var req LoginRequest
     if err := c.ShouldBindJSON(&req); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
         return
     }
 
-    // In a real app, you would validate the user against a database
-    if req.Username != "testuser" || req.Password != "password" {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+    // Validate user credentials (replace with DB lookup)
+    if req.Username != "admin" || req.Password != "password" {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
         return
     }
 
-    // Set token expiration time
-    expirationTime := time.Now().Add(5 * time.Minute)
-
-    // Create the JWT claims, which includes the username and expiry time
-    claims := &jwt.RegisteredClaims{
-        Subject:   req.Username, // Could also be user ID
-        ExpiresAt: jwt.NewNumericDate(expirationTime),
+    expiresAt := time.Now().Add(15 * time.Minute)
+    claims := jwt.RegisteredClaims{
+        Subject:   req.Username,
+        ExpiresAt: jwt.NewNumericDate(expiresAt),
+        Issuer:    "go-api",
+        Audience:  []string{"go-clients"},
     }
 
-    // Create the token with the claims and sign it with the HS256 algorithm
     token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-    // Create the JWT string
     tokenString, err := token.SignedString(jwtKey)
     if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not create token"})
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "token error"})
         return
     }
 
-    // Finally, send the token to the client
     c.JSON(http.StatusOK, gin.H{"token": tokenString})
 }
 ```
 
----
-
-## 4. JWT Authentication Middleware
-
-Now, we need a middleware to protect our routes. This middleware will extract the JWT from the `Authorization` header, validate it, and if valid, allow the request to proceed.
+## 4. Auth Middleware
 
 ```go
+import (
+    "fmt"
+    "strings"
+
+    "github.com/gin-gonic/gin"
+    "github.com/golang-jwt/jwt/v5"
+)
+
 func authMiddleware() gin.HandlerFunc {
     return func(c *gin.Context) {
-        // Get the token from the Authorization header
-        authHeader := c.GetHeader("Authorization")
-        if authHeader == "" {
-            c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization header not provided"})
+        auth := c.GetHeader("Authorization")
+        if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
+            c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
             return
         }
 
-        // The header should be in the format "Bearer <token>"
-        tokenString := authHeader[len("Bearer "):]
-
-        // Initialize a new instance of `Claims`
+        tokenString := strings.TrimPrefix(auth, "Bearer ")
         claims := &jwt.RegisteredClaims{}
 
-        // Parse the JWT string and store the result in `claims`.
-        // The function will validate the signature and the expiration time.
         token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+            if token.Method != jwt.SigningMethodHS256 {
+                return nil, fmt.Errorf("unexpected signing method")
+            }
             return jwtKey, nil
         })
 
-        if err != nil {
-            if err == jwt.ErrSignatureInvalid {
-                c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token signature"})
-                return
-            }
-            c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Invalid token"})
-            return
-        }
-        if !token.Valid {
-            c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+        if err != nil || !token.Valid {
+            c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
             return
         }
 
-        // Store the user subject in the context for the handler to use
-        c.Set("username", claims.Subject)
-
-        // Continue to the next handler
+        c.Set("user", claims.Subject)
         c.Next()
     }
 }
 ```
 
+## Tips
+
+- Keep tokens short‑lived.
+- Rotate secrets periodically.
+- Use HTTPS in production.
+
 ---
 
-## 5. Putting It All Together
-
-Let's create a protected route and use our middleware.
-
-```go
-package main
-
-import (
-    // ... other imports
-)
-
-// ... LoginRequest struct, jwtKey, login handler, and authMiddleware as defined above
-
-func welcome(c *gin.Context) {
-    // Get the username from the context
-    username, exists := c.Get("username")
-    if !exists {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Username not found in context"})
-        return
-    }
-    
-    c.JSON(http.StatusOK, gin.H{"message": "Welcome, " + username.(string) + "!"})
-}
-
-func main() {
-    router := gin.Default()
-
-    // Public route
-    router.POST("/login", login)
-
-    // Protected route group
-    protected := router.Group("/api")
-    protected.Use(authMiddleware())
-    {
-        protected.GET("/welcome", welcome)
-    }
-
-    router.Run(":8080")
-}
-```
-
-### Testing with `curl`
-
-1.  **Get the token**:
-    ```bash
-    TOKEN=$(curl -s -X POST -H "Content-Type: application/json" -d '{"username":"testuser", "password":"password"}' http://localhost:8080/login | jq -r .token)
-    ```
-    *(Requires `jq` to parse JSON. You can also copy the token manually).*
-
-2.  **Access the protected route**:
-    ```bash
-    curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/welcome
-    # Expected output: {"message":"Welcome, testuser!"}
-    ```
-
-3.  **Try without a token**:
-    ```bash
-    curl http://localhost:8080/api/welcome
-    # Expected output: {"error":"Authorization header not provided"}
-    ```
-
-This setup provides a robust and stateless authentication system for your Go APIs.
+[Previous: Deployment](./21-deployment-docker-binary.md) | [Back to Index](./README.md)

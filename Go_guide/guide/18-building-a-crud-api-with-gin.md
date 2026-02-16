@@ -1,18 +1,169 @@
 # 18 - Building a CRUD API with Gin
 
-Now let's apply everything we've learned about Gin to build a practical example: a RESTful API for managing a collection of books. CRUD stands for Create, Read, Update, and Delete, which are the four basic functions of persistent storage.
+This chapter builds a small but production‑style CRUD API using Gin. It uses a repository layer and proper request validation.
 
-For simplicity, we will use an in-memory slice to store our data instead of a real database.
+## Goals
 
----
+- Build a clean handler layer
+- Validate requests
+- Keep data access isolated
 
-## 1. Project Setup
-
-Create a new `main.go` file. We'll define our data structure and our "database" (a slice) at the top.
+## 1. Data Model
 
 ```go
-package main
+import (
+    "net/http"
+    "strconv"
+    "sync"
 
+    "github.com/gin-gonic/gin"
+)
+
+type Book struct {
+    ID     int64  `json:"id"`
+    Title  string `json:"title"`
+    Author string `json:"author"`
+}
+```
+
+## 2. Repository Interface
+
+```go
+type BookStore interface {
+    List() []Book
+    Get(id int64) (Book, bool)
+    Create(b Book) Book
+    Update(id int64, b Book) (Book, bool)
+    Delete(id int64) bool
+}
+```
+
+## 3. In‑Memory Store (Example)
+
+```go
+import "sync"
+
+type MemoryStore struct {
+    mu    sync.RWMutex
+    next  int64
+    books []Book
+}
+
+func NewMemoryStore() *MemoryStore {
+    return &MemoryStore{next: 1, books: []Book{}}
+}
+
+func (s *MemoryStore) List() []Book {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    return append([]Book{}, s.books...)
+}
+
+func (s *MemoryStore) Get(id int64) (Book, bool) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    for _, b := range s.books {
+        if b.ID == id {
+            return b, true
+        }
+    }
+    return Book{}, false
+}
+
+func (s *MemoryStore) Create(b Book) Book {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    b.ID = s.next
+    s.next++
+    s.books = append(s.books, b)
+    return b
+}
+
+func (s *MemoryStore) Update(id int64, b Book) (Book, bool) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    for i, item := range s.books {
+        if item.ID == id {
+            b.ID = id
+            s.books[i] = b
+            return b, true
+        }
+    }
+    return Book{}, false
+}
+
+func (s *MemoryStore) Delete(id int64) bool {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    for i, item := range s.books {
+        if item.ID == id {
+            s.books = append(s.books[:i], s.books[i+1:]...)
+            return true
+        }
+    }
+    return false
+}
+```
+
+## 4. Handler Layer
+
+```go
+type BookHandler struct {
+    store BookStore
+}
+
+func NewBookHandler(store BookStore) *BookHandler {
+    return &BookHandler{store: store}
+}
+```
+
+### Request Model
+
+```go
+type CreateBookRequest struct {
+    Title  string `json:"title" binding:"required,min=2"`
+    Author string `json:"author" binding:"required,min=2"`
+}
+```
+
+### List
+
+```go
+import (
+    "net/http"
+
+    "github.com/gin-gonic/gin"
+)
+
+func (h *BookHandler) List(c *gin.Context) {
+    c.JSON(http.StatusOK, h.store.List())
+}
+```
+
+### Create
+
+```go
+import (
+    "net/http"
+
+    "github.com/gin-gonic/gin"
+)
+
+func (h *BookHandler) Create(c *gin.Context) {
+    var req CreateBookRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+
+    book := h.store.Create(Book{Title: req.Title, Author: req.Author})
+    c.JSON(http.StatusCreated, book)
+}
+```
+
+### Get
+
+```go
 import (
     "net/http"
     "strconv"
@@ -20,211 +171,109 @@ import (
     "github.com/gin-gonic/gin"
 )
 
-// Book represents data about a book.
-type Book struct {
-    ID     int    `json:"id"`
-    Title  string `json:"title" binding:"required"`
-    Author string `json:"author" binding:"required"`
-}
-
-// In-memory "database"
-var books = []Book{
-    {ID: 1, Title: "The Hitchhiker's Guide to the Galaxy", Author: "Douglas Adams"},
-    {ID: 2, Title: "Dune", Author: "Frank Herbert"},
-    {ID: 3, Title: "1984", Author: "George Orwell"},
-}
-```
-
----
-
-## 2. Implementing CRUD Handlers
-
-We'll create a handler function for each CRUD operation.
-
-### A. Get All Books (Read)
-This handler will return the entire list of books.
-
-```go
-func getBooks(c *gin.Context) {
-    c.JSON(http.StatusOK, books)
-}
-```
-
-### B. Get a Single Book (Read)
-This handler will find and return a single book by its ID from the URL parameter.
-
-```go
-func getBookByID(c *gin.Context) {
-    idStr := c.Param("id")
-    id, err := strconv.Atoi(idStr)
+func (h *BookHandler) Get(c *gin.Context) {
+    id, err := strconv.ParseInt(c.Param("id"), 10, 64)
     if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
+        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
         return
     }
 
-    for _, b := range books {
-        if b.ID == id {
-            c.JSON(http.StatusOK, b)
-            return
-        }
+    book, ok := h.store.Get(id)
+    if !ok {
+        c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+        return
     }
 
-    c.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
+    c.JSON(http.StatusOK, book)
 }
 ```
 
-### C. Create a New Book (Create)
-This handler will add a new book to our collection, validating the input.
+### Update
 
 ```go
-func createBook(c *gin.Context) {
-    var newBook Book
-
-    if err := c.ShouldBindJSON(&newBook); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-        return
-    }
-
-    // Assign a new ID (in a real app, the DB would do this)
-    newBook.ID = len(books) + 1
-    books = append(books, newBook)
-
-    c.JSON(http.StatusCreated, newBook)
-}
-```
-
-### D. Update a Book (Update)
-This handler will update an existing book's information.
-
-```go
-func updateBook(c *gin.Context) {
-    idStr := c.Param("id")
-    id, err := strconv.Atoi(idStr)
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
-        return
-    }
-
-    var updatedBook Book
-    if err := c.ShouldBindJSON(&updatedBook); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-        return
-    }
-
-    for i, b := range books {
-        if b.ID == id {
-            books[i].Title = updatedBook.Title
-            books[i].Author = updatedBook.Author
-            c.JSON(http.StatusOK, books[i])
-            return
-        }
-    }
-
-    c.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
-}
-```
-
-### E. Delete a Book (Delete)
-This handler will remove a book from the collection.
-
-```go
-func deleteBook(c *gin.Context) {
-    idStr := c.Param("id")
-    id, err := strconv.Atoi(idStr)
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
-        return
-    }
-
-    for i, b := range books {
-        if b.ID == id {
-            // Remove the book from the slice
-            books = append(books[:i], books[i+1:]...)
-            c.Status(http.StatusNoContent) // 204 No Content
-            return
-        }
-    }
-
-    c.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
-}
-```
-
----
-
-## 3. Putting It All Together in `main.go`
-
-Now we combine our handlers and register the routes in our `main` function.
-
-```go
-// main.go
-
-package main
-
 import (
-	"net/http"
-	"strconv"
+    "net/http"
+    "strconv"
 
-	"github.com/gin-gonic/gin"
+    "github.com/gin-gonic/gin"
 )
 
-type Book struct {
-	ID     int    `json:"id"`
-	Title  string `json:"title" binding:"required"`
-	Author string `json:"author" binding:"required"`
-}
-
-var books = []Book{
-	{ID: 1, Title: "The Hitchhiker's Guide to the Galaxy", Author: "Douglas Adams"},
-	{ID: 2, Title: "Dune", Author: "Frank Herbert"},
-	{ID: 3, Title: "1984", Author: "George Orwell"},
-}
-
-func getBooks(c *gin.Context) { /* ... as defined above ... */ }
-func getBookByID(c *gin.Context) { /* ... as defined above ... */ }
-func createBook(c *gin.Context) { /* ... as defined above ... */ }
-func updateBook(c *gin.Context) { /* ... as defined above ... */ }
-func deleteBook(c *gin.Context) { /* ... as defined above ... */ }
-
-
-func main() {
-    router := gin.Default()
-
-    // Group routes under /api
-    api := router.Group("/api")
-    {
-        api.GET("/books", getBooks)
-        api.GET("/books/:id", getBookByID)
-        api.POST("/books", createBook)
-        api.PUT("/books/:id", updateBook)
-        api.DELETE("/books/:id", deleteBook)
+func (h *BookHandler) Update(c *gin.Context) {
+    id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+        return
     }
 
-    router.Run(":8080")
+    var req CreateBookRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+
+    book, ok := h.store.Update(id, Book{Title: req.Title, Author: req.Author})
+    if !ok {
+        c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+        return
+    }
+
+    c.JSON(http.StatusOK, book)
 }
 ```
-*(You would copy the handler function bodies from the previous section into the complete `main.go` file)*
+
+### Delete
+
+```go
+import (
+    "net/http"
+    "strconv"
+
+    "github.com/gin-gonic/gin"
+)
+
+func (h *BookHandler) Delete(c *gin.Context) {
+    id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+        return
+    }
+
+    if !h.store.Delete(id) {
+        c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+        return
+    }
+
+    c.Status(http.StatusNoContent)
+}
+```
+
+## 5. Router Setup
+
+```go
+import "github.com/gin-gonic/gin"
+
+r := gin.New()
+r.Use(gin.Logger(), gin.Recovery())
+
+store := NewMemoryStore()
+handler := NewBookHandler(store)
+
+api := r.Group("/api")
+api.GET("/books", handler.List)
+api.POST("/books", handler.Create)
+api.GET("/books/:id", handler.Get)
+api.PUT("/books/:id", handler.Update)
+api.DELETE("/books/:id", handler.Delete)
+
+r.Run(":8080")
+```
+
+## Tips
+
+- Separate handlers from storage logic.
+- Validate input at the boundary.
+- Replace the memory store with a DB repository in production.
 
 ---
 
-## 4. Testing with `curl`
-
-You can now run your server (`go run .`) and test your API endpoints:
-
-```bash
-# Get all books
-curl http://localhost:8080/api/books
-
-# Get book with ID 2
-curl http://localhost:8080/api/books/2
-
-# Create a new book
-curl -X POST -H "Content-Type: application/json" -d '{"title":"The Lord of the Rings","author":"J.R.R. Tolkien"}' http://localhost:8080/api/books
-
-# Update book with ID 1
-curl -X PUT -H "Content-Type: application/json" -d '{"title":"Hitchhiker's Guide","author":"Douglas Adams"}' http://localhost:8080/api/books/1
-
-# Delete book with ID 3
-curl -X DELETE http://localhost:8080/api/books/3
-```
-
-This simple CRUD API demonstrates the core functionality of Gin for building RESTful services, combining routing, data binding, validation, and JSON responses.
+[Previous: Gin Middleware](./17-gin-middleware.md) | [Back to Index](./README.md) | [Next: Testing in Go ->](./19-testing-in-go.md)

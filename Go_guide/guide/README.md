@@ -1,23 +1,30 @@
-# 🐹 Go Backend Guide
+# 🐹 Go Backend Guide (2026)
 
-A structured Go backend guide from language basics to production APIs with Gin.
+A production‑grade Go guide from language fundamentals to real‑world APIs with `net/http` and Gin.
 
 ---
 
 ## 🎯 Who This Is For
 
-- Beginners learning Go
-- Backend engineers building fast APIs
-- Teams adopting Go for services
+- Developers learning Go for backend work
+- Engineers building fast APIs and services
+- Teams standardizing on Go for microservices
 
 ---
 
 ## 🛠️ What You Will Build
 
-- Go fundamentals
+- Go fundamentals and concurrency
 - HTTP servers with `net/http`
 - CRUD API with Gin
-- JWT authentication and deployment
+- JWT authentication and production deployment
+
+---
+
+## ✅ Recommended Versions
+
+- Go 1.25 (current stable)
+- Gin 1.11
 
 ---
 
