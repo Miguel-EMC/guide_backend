@@ -1,60 +1,83 @@
 # 03 - Installation on Windows
 
-There are three common approaches for Laravel on Windows:
+There are three common approaches for Laravel on Windows. Pick the one that matches your workflow and team environment.
 
-1. **Laravel Herd** (recommended)
-2. **Laragon** (popular and easy)
-3. **WSL2** (Linux environment inside Windows)
+## Goals
 
-This guide uses Laravel Herd because it is the official, modern approach.
+- Install PHP and Composer quickly
+- Run Laravel with minimal friction
+- Keep dev and production close
 
 ## Option A: Laravel Herd (Recommended)
 
-### Step 1: Install Herd
+Laravel Herd provides PHP, Composer, and a local web server with minimal setup.
 
-Download and install Laravel Herd for Windows. It includes PHP, Composer, and a local web server.
-
-### Step 2: Verify Tooling
-
-Open the Herd terminal and run:
+1. Install Laravel Herd for Windows.
+2. Open the Herd terminal.
+3. Verify tools:
 
 ```bash
 php --version
 composer --version
 ```
 
-### Step 3: Create a Project
+4. Create a project:
 
 ```bash
 composer create-project laravel/laravel my-laravel-api
 ```
 
-Or use the Laravel installer:
+Or use the installer:
 
 ```bash
 composer global require laravel/installer
 laravel new my-laravel-api
 ```
 
-### Step 4: Run the App
+5. Start the app:
 
 ```bash
 cd my-laravel-api
 php artisan serve
 ```
 
-## Option B: Laragon (Alternative)
+## Option B: WSL2 (Best Linux Parity)
 
-Laragon bundles Apache/Nginx, PHP, and MySQL in one installer. It is fast for local development.
+WSL2 gives you a real Linux environment and matches production more closely.
 
-## Option C: WSL2 (Advanced)
+1. Install WSL2 and Ubuntu.
+2. Follow the Linux installation chapter inside WSL2.
+3. Use VS Code with the WSL extension for a clean workflow.
 
-WSL2 gives you a full Linux environment. Follow the Linux installation chapter inside WSL2.
+## Option C: Laragon (Alternative)
+
+Laragon is an all-in-one stack with Apache/Nginx, PHP, and MySQL. It is fast and convenient if you already use it.
+
+## Database and Redis (Recommended)
+
+Use Docker Desktop to run PostgreSQL and Redis:
+
+```yaml
+# docker-compose.yml
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: laravel
+    ports:
+      - "5432:5432"
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+```
 
 ## Tips
 
-- Keep PHP updated to 8.2+.
-- Use Herd or WSL2 for the cleanest setup.
+- Use WSL2 for teams that deploy on Linux.
+- Keep PHP 8.2+ and Composer updated.
 - Use Windows Terminal and Git for a better workflow.
 
 ---

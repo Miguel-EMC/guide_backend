@@ -1,213 +1,147 @@
 # 16 - Testing with Pest and PHPUnit
 
-Automated testing is a cornerstone of professional software development. It ensures your application works as expected, prevents regressions when you refactor or add new features, and gives you confidence in your codebase. Laravel is built with testing in mind and provides powerful tools for writing both **Unit** and **Feature** tests.
+Laravel ships with PHPUnit and a powerful testing layer. Pest is a popular alternative with a cleaner syntax. You can use either, or mix both.
 
--   **Unit Tests**: Focus on a very small, isolated portion of your code, such as a single method within a model or service.
--   **Feature Tests**: Test a larger portion of your code, such as a full HTTP request to an API endpoint.
+## Goals
 
----
+- Write fast unit tests
+- Build reliable feature tests for APIs
+- Fake external services and time
 
-## 1. Setup and Environment
+## 1. Running Tests
 
-Laravel uses **PHPUnit** as its default testing framework. The configuration is in the `phpunit.xml` file at the root of your project.
-
-When you run your tests, Laravel automatically configures a separate testing environment. It's common practice to create a `.env.testing` file to override your `.env` settings for tests, for example, to use an in-memory SQLite database.
-
-**Example `.env.testing` for SQLite in-memory:**
-```
-DB_CONNECTION=sqlite
-DB_DATABASE=:memory:
-```
-
-### Running Tests
-To run all tests, use the `test` Artisan command:
 ```bash
 php artisan test
 ```
 
----
+## 2. Installing Pest (Optional)
 
-## 2. Feature Tests (Testing API Endpoints)
-
-Feature tests are where you'll spend most of your time when testing a backend API. You can simulate HTTP requests to your endpoints and assert that you receive the correct responses.
-
-### Creating a Test
 ```bash
-php artisan make:test Feature/PostApiTest
+composer require pestphp/pest --dev
+./vendor/bin/pest --init
 ```
 
-### The `RefreshDatabase` Trait
-To ensure your tests are isolated and repeatable, use the `RefreshDatabase` trait. This trait will migrate your database before each test and wrap it in a transaction, rolling back all changes after the test completes.
+## 3. Database Testing
+
+Use `RefreshDatabase` to migrate and wrap each test in a transaction.
 
 ```php
-// tests/Feature/PostApiTest.php
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Foundation\Testing\WithFaker;
 use Tests\TestCase;
 
-class PostApiTest extends TestCase
+class PostTest extends TestCase
 {
-    use RefreshDatabase; // Essential for database testing
+    use RefreshDatabase;
 
-    // ... your tests
+    public function test_posts_can_be_created(): void
+    {
+        $response = $this->postJson('/api/posts', [
+            'title' => 'New Post',
+            'content' => 'Hello world',
+        ]);
+
+        $response->assertCreated();
+        $this->assertDatabaseHas('posts', ['title' => 'New Post']);
+    }
 }
 ```
 
-### Example: Testing the "Get All Posts" Endpoint
+## 4. Feature Test Example
 
 ```php
-// tests/Feature/PostApiTest.php
 use App\Models\Post;
 
-// ... inside PostApiTest class
-
-/** @test */
-public function it_can_retrieve_a_list_of_posts(): void
+public function test_user_can_list_posts(): void
 {
-    // 1. Arrange: Set up the test data
     Post::factory()->count(3)->create();
 
-    // 2. Act: Make a request to the endpoint
     $response = $this->getJson('/api/posts');
 
-    // 3. Assert: Check the response
-    $response->assertStatus(200)
-             ->assertJsonCount(3)
-             ->assertJsonStructure([
-                 '*' => [ // Asserts the structure for each item in the collection
-                     'id',
-                     'title',
-                     'content',
-                     'created_at',
-                     'updated_at',
-                 ]
-             ]);
+    $response
+        ->assertOk()
+        ->assertJsonStructure([
+            'data' => [['id', 'title', 'created_at']],
+        ]);
 }
 ```
 
-### Example: Testing Post Creation with Authentication
+## 5. Authentication in Tests
 
 ```php
-// tests/Feature/PostApiTest.php
 use App\Models\User;
+use Laravel\Sanctum\Sanctum;
 
-// ... inside PostApiTest class
-
-/** @test */
-public function an_authenticated_user_can_create_a_post(): void
+public function test_protected_route_requires_auth(): void
 {
-    // Arrange: Create a user
-    $user = User::factory()->create();
+    Sanctum::actingAs(User::factory()->create(), ['posts:read']);
 
-    // Act: Make a request, acting as the authenticated user
-    $response = $this->actingAs($user, 'sanctum') // Authenticate using Sanctum guard
-                     ->postJson('/api/posts', [
-                         'title' => 'My First Post',
-                         'content' => 'This is the content.',
-                     ]);
-
-    // Assert: Check the response and database
-    $response->assertStatus(201) // Assert "Created" status
-             ->assertJsonFragment(['title' => 'My First Post']);
-    
-    $this->assertDatabaseHas('posts', [
-        'title' => 'My First Post',
-    ]);
+    $this->getJson('/api/posts')
+        ->assertOk();
 }
 ```
 
-**Common API Assertions:**
--   `assertStatus($code)`: Assert the HTTP status code.
--   `assertJson(array $data)`: Assert that the JSON response contains the given data.
--   `assertJsonFragment(array $data)`: Assert the response contains the given fragment of data.
--   `assertJsonStructure(array $structure)`: Assert the JSON response has a specific structure.
--   `assertJsonCount($count)`: Assert the root JSON array has a certain number of items.
-
----
-
-## 3. Unit Tests
-
-Unit tests focus on smaller pieces of logic.
-
-### Creating a Unit Test
-```bash
-php artisan make:test Unit/PostTest --unit
-```
-
-### Example: Testing a Model Method
-Imagine your `Post` model has a method `isEdited()`.
+## 6. Faking External Systems
 
 ```php
-// tests/Unit/PostTest.php
-use App\Models\Post;
+use App\Jobs\SendWelcomeEmail;
+use App\Events\UserRegistered;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 
-// ... inside PostTest class
-
-/** @test */
-public function it_can_determine_if_it_was_edited(): void
-{
-    // Arrange
-    $post = Post::factory()->make([
-        'created_at' => now()->subMinute(),
-        'updated_at' => now(),
-    ]);
-
-    $uneditedPost = Post::factory()->make([
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
-
-    // Act & Assert
-    $this->assertTrue($post->isEdited());
-    $this->assertFalse($uneditedPost->isEdited());
-}
+Mail::fake();
+Queue::fake();
+Event::fake();
+Http::fake([
+    'api.example.com/*' => Http::response(['ok' => true], 200),
+]);
 ```
 
----
-
-## 4. Pest: A Modern Alternative
-
-Pest is a testing framework built on top of PHPUnit that focuses on a more elegant and expressive syntax. Laravel now supports Pest out of the box.
-
-### Installing Pest
-```bash
-composer require pestphp/pest --dev --with-all-dependencies
-php artisan pest:install
-```
-
-### Pest Syntax Example
-Here's the previous feature test, rewritten in Pest:
+Assert dispatches:
 
 ```php
-// tests/Feature/PostApiTest.php
+Queue::assertPushed(SendWelcomeEmail::class);
+Event::assertDispatched(UserRegistered::class);
+```
 
-use App\Models\Post;
-use App\Models\User;
-use function Pest\Laravel\{getJson, postJson};
+## 7. Testing Jobs
 
-test('it can retrieve a list of posts', function () {
-    Post::factory()->count(3)->create();
+```php
+use App\Jobs\ProcessInvoice;
+use Illuminate\Support\Facades\Bus;
 
-    getJson('/api/posts')
-        ->assertStatus(200)
-        ->assertJsonCount(3);
-});
+Bus::fake();
 
-test('an authenticated user can create a post', function () {
-    $user = User::factory()->create();
+ProcessInvoice::dispatch($invoiceId);
 
-    actingAs($user, 'sanctum')
-        ->postJson('/api/posts', [
-            'title' => 'My Pest Post',
-            'content' => 'This is content from Pest.',
-        ])
-        ->assertStatus(201)
-        ->assertJsonFragment(['title' => 'My Pest Post']);
-    
-    $this->assertDatabaseHas('posts', ['title' => 'My Pest Post']);
+Bus::assertDispatched(ProcessInvoice::class, function ($job) use ($invoiceId) {
+    return $job->invoiceId === $invoiceId;
 });
 ```
 
-Pest often leads to more readable tests and is becoming the preferred choice for many Laravel developers.
+## 8. Time Travel
 
-Testing is a deep topic, but mastering these fundamentals will dramatically improve the quality and reliability of your API.
+```php
+$this->travel(2)->hours();
+
+// ... execute logic that depends on time
+
+$this->travelBack();
+```
+
+## 9. Debugging Tips
+
+- Use `->withoutExceptionHandling()` to surface errors.
+- Use `dd()` only during local runs.
+- Keep assertions specific and stable.
+
+## Tips
+
+- Prefer small tests with clear intent.
+- Use factories for consistent fixtures.
+- Run tests in CI with a clean database.
+
+---
+
+[Previous: Error Handling and Logging](./15-error-handling-and-logging.md) | [Back to Index](./README.md) | [Next: Queues and Jobs ->](./17-queues-and-jobs.md)

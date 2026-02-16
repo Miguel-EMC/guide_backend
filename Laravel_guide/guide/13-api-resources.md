@@ -1,206 +1,146 @@
 # 13 - API Resources (Data Transformation)
 
-When building APIs, you often need to transform your Eloquent models into JSON responses that are consistent and easy for clients to consume. Directly returning Eloquent models with `$model->toJson()` can expose internal details or include unnecessary data. Laravel's **API Resources** provide a powerful way to transform your models and their relationships into flexible and structured JSON formats.
+API Resources transform models into consistent JSON responses. They prevent accidental data leaks and keep your API schema stable over time.
 
-API Resources allow you to:
--   Control exactly which attributes are exposed in your API's JSON responses.
--   Add metadata that is not part of the model itself.
--   Include relationships in a controlled manner, preventing N+1 queries.
--   Maintain a consistent JSON structure across your API.
+## Goals
 
----
+- Control your public JSON shape
+- Include relationships safely
+- Add metadata and pagination
 
-## 1. Creating Resources
-
-You can generate a new resource using the `make:resource` Artisan command:
+## 1. Create a Resource
 
 ```bash
-php artisan make:resource DoctorResource
+php artisan make:resource PostResource
 ```
-This will create a new file at `app/Http/Resources/DoctorResource.php`.
-
-## 2. Resource Structure
-
-A resource class extends `Illuminate\Http\Resources\Json\JsonResource` and defines a `toArray()` method. This method takes the incoming request and returns the array of attributes that should be converted to JSON.
 
 ```php
-// app/Http/Resources/DoctorResource.php
-
+// app/Http/Resources/PostResource.php
 namespace App\Http\Resources;
 
+use App\Http\Resources\UserResource;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class DoctorResource extends JsonResource
-{
-    /**
-     * Transform the resource into an array.
-     *
-     * @return array<string, mixed>
-     */
-    public function toArray(Request $request): array
-    {
-        return [
-            'id' => $this->id,
-            'full_name' => $this->name, // Custom attribute name
-            'specialty_area' => $this->specialty,
-            'on_vacation' => $this->is_on_vacation,
-            'created_at' => $this->created_at->format('Y-m-d H:i:s'),
-            'updated_at' => $this->updated_at->format('Y-m-d H:i:s'),
-        ];
-    }
-}
-```
-
----
-
-## 3. Using Resources in Controllers
-
-### Single Resource
-
-To transform a single model instance, you simply instantiate the resource:
-
-```php
-// app/Http/Controllers/DoctorController.php
-
-use App\Models\Doctor;
-use App\Http\Resources\DoctorResource;
-use Illuminate\Http\JsonResponse;
-
-class DoctorController extends Controller
-{
-    /**
-     * Display the specified resource.
-     */
-    public function show(Doctor $doctor): JsonResponse
-    {
-        return response()->json(new DoctorResource($doctor));
-        // Alternatively, you can just return the resource directly
-        // return new DoctorResource($doctor);
-    }
-}
-```
-
-### Resource Collections
-
-To transform a collection of models, use the `collection()` method on your resource:
-
-```php
-// app/Http/Controllers/DoctorController.php
-
-use App\Models\Doctor;
-use App\Http\Resources\DoctorResource;
-use Illuminate\Http\JsonResponse;
-
-class DoctorController extends Controller
-{
-    /**
-     * Display a listing of the resource.
-     */
-    public function index(): JsonResponse
-    {
-        $doctors = Doctor::all();
-        return response()->json(DoctorResource::collection($doctors));
-        // Alternatively, return DoctorResource::collection($doctors);
-    }
-}
-```
-Laravel will automatically paginate resource collections if the underlying collection is a paginator instance.
-
----
-
-## 4. Including Relationships
-
-API Resources excel at managing how related models are included in your JSON responses.
-
-```php
-// app/Http/Resources/DoctorResource.php
-
-namespace App\Http\Resources;
-
-use App\Http\Resources\PatientResource; // Assuming you have a PatientResource
-use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\JsonResource;
-
-class DoctorResource extends JsonResource
+class PostResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
         return [
             'id' => $this->id,
-            'full_name' => $this->name,
-            'specialty_area' => $this->specialty,
-            'on_vacation' => $this->is_on_vacation,
-            'patients' => PatientResource::collection($this->whenLoaded('patients')), // Conditionally load
-            'created_at' => $this->created_at->format('Y-m-d H:i:s'),
-            'updated_at' => $this->updated_at->format('Y-m-d H:i:s'),
+            'title' => $this->title,
+            'summary' => $this->summary,
+            'author' => new UserResource($this->whenLoaded('author')),
+            'created_at' => $this->created_at?->toISOString(),
+            'updated_at' => $this->updated_at?->toISOString(),
         ];
     }
 }
 ```
-In the example above, `whenLoaded('patients')` ensures that the `patients` relationship is only included if it has already been eager loaded on the model. This prevents accidental N+1 queries.
 
----
-
-## 5. Conditional Attributes
-
-You can conditionally include attributes in your resource's output using the `when()` method.
+## 2. Use a Resource in Controllers
 
 ```php
-// app/Http/Resources/DoctorResource.php
+use App\Http\Resources\PostResource;
+use App\Models\Post;
 
-namespace App\Http\Resources;
+public function show(Post $post): PostResource
+{
+    $post->load('author');
+    return new PostResource($post);
+}
+```
 
-use Illuminate\Http\Request;
+## 3. Collections and Pagination
+
+```php
+use App\Http\Resources\PostResource;
+use App\Models\Post;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+
+public function index(): AnonymousResourceCollection
+{
+    $posts = Post::query()->with('author')->paginate(15);
+    return PostResource::collection($posts);
+}
+```
+
+Laravel automatically adds pagination `links` and `meta` when the resource wraps a paginator.
+
+## 4. Conditional Fields
+
+```php
+return [
+    'id' => $this->id,
+    'title' => $this->title,
+    $this->mergeWhen($request->user()?->isAdmin(), [
+        'internal_notes' => $this->internal_notes,
+    ]),
+];
+```
+
+## 5. Custom Meta Data
+
+```php
+return (PostResource::collection($posts))
+    ->additional([
+        'meta' => [
+            'api_version' => '1.0',
+            'request_id' => $request->header('x-request-id'),
+        ],
+    ]);
+```
+
+## 6. Wrapping and Response Customization
+
+Disable the default `data` wrapper if you need a flat response:
+
+```php
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class DoctorResource extends JsonResource
+JsonResource::withoutWrapping();
+```
+
+Add headers or status codes:
+
+```php
+public function withResponse(Request $request, $response): void
 {
-    public function toArray(Request $request): array
-    {
-        return [
-            'id' => $this->id,
-            'full_name' => $this->name,
-            'specialty_area' => $this->specialty,
-            'on_vacation' => $this->is_on_vacation,
-            // Include a 'secret_note' only if the current user is an admin
-            $this->when(Auth::user() && Auth::user()->isAdmin(), [
-                'secret_note' => 'This doctor loves coffee.',
-            ]),
-            'created_at' => $this->created_at->format('Y-m-d H:i:s'),
-            'updated_at' => $this->updated_at->format('Y-m-d H:i:s'),
-        ];
-    }
+    $response->header('X-Resource-Version', '1');
 }
 ```
 
----
+## 7. Dedicated Resource Collections
 
-## 6. Adding Metadata to Collections
-
-When returning a collection of resources, you might want to include additional metadata (e.g., total count, pagination links).
+```bash
+php artisan make:resource PostCollection
+```
 
 ```php
-// app/Http/Resources/DoctorCollection.php (custom collection resource)
 namespace App\Http\Resources;
 
 use Illuminate\Http\Resources\Json\ResourceCollection;
 
-class DoctorCollection extends ResourceCollection
+class PostCollection extends ResourceCollection
 {
-    public function toArray(Request $request): array
+    public function toArray($request): array
     {
         return [
-            'data' => $this->collection, // The actual collection of resources
+            'data' => $this->collection,
             'meta' => [
-                'total_doctors' => $this->collection->count(),
-                'version' => '1.0.0',
-                'author' => 'Your Name',
+                'total' => $this->collection->count(),
             ],
         ];
     }
 }
 ```
-You would then use `return new DoctorCollection($doctors);` in your controller.
 
-API Resources are an indispensable tool for crafting clean, consistent, and maintainable JSON APIs in Laravel.
+## Tips
+
+- Always eager‑load relationships used by resources.
+- Keep resource names stable to avoid breaking clients.
+- Use resources to enforce API versioning boundaries.
+
+---
+
+[Previous: Authentication with Sanctum](./12-authentication-sanctum.md) | [Back to Index](./README.md) | [Next: Service Container and Providers ->](./14-service-container-and-providers.md)

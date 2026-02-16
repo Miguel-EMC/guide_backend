@@ -1,186 +1,202 @@
 # 11 - Middleware in Laravel
 
-Middleware provides a convenient mechanism for filtering HTTP requests entering your application. They act as "layers" that requests must pass through before reaching your controller, and also after your controller generates a response but before it's sent back to the client. This allows you to perform tasks such as authentication, logging, CORS handling, and more, in a centralized manner.
+Middleware are request filters that run before and after your controllers. They are the correct place for cross‑cutting concerns like authentication, rate limiting, CORS, tenant resolution, and request logging.
 
----
+## Goals
 
-## 1. Understanding Middleware
+- Register middleware the Laravel 12 way
+- Compose middleware for routes and groups
+- Build custom middleware with parameters and ordering
 
-Imagine your API endpoint is a secure club. Middleware are the bouncers at the entrance. Each bouncer checks something specific (e.g., "Is this person old enough?", "Does this person have an invitation?", "Is this person on the VIP list?"). If all checks pass, the person enters. If not, they are denied entry.
+## 1. Where Middleware Is Registered (Laravel 12 Skeleton)
 
-A middleware class typically has a `handle` method, which receives the incoming `$request` and a `$next` closure. The `$next` closure represents the next middleware in the stack, or the controller action itself.
+Laravel 12 uses `bootstrap/app.php` to register middleware instead of only `app/Http/Kernel.php`.
 
 ```php
-namespace App\Http\Middleware;
+// bootstrap/app.php
+use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Configuration\Middleware;
 
-use Closure;
-use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\Response;
+return Application::configure(basePath: dirname(__DIR__))
+    ->withMiddleware(function (Middleware $middleware) {
+        // Global middleware
+        $middleware->use([
+            \App\Http\Middleware\TrustProxies::class,
+            \Illuminate\Http\Middleware\HandleCors::class,
+        ]);
 
-class EnsureTokenIsValid
-{
-    /**
-     * Handle an incoming request.
-     *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
-     */
-    public function handle(Request $request, Closure $next): Response
-    {
-        if (! $request->has('token')) {
-            return response()->json(['message' => 'Token not provided'], 401);
-        }
+        // Middleware groups
+        $middleware->group('api', [
+            \Illuminate\Routing\Middleware\ThrottleRequests::class . ':api',
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+        ]);
 
-        if ($request->input('token') !== 'my-secret-token') {
-            return response()->json(['message' => 'Invalid token'], 403);
-        }
-
-        return $next($request); // Pass the request to the next middleware or controller
-    }
-}
+        // Route middleware aliases
+        $middleware->alias([
+            'auth' => \App\Http\Middleware\Authenticate::class,
+            'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+        ]);
+    })
+    ->create();
 ```
 
----
+If you maintain an older app, middleware may still live in `app/Http/Kernel.php`. The concepts are the same.
 
 ## 2. Creating Middleware
 
-You can generate a new middleware class using the Artisan command:
-
 ```bash
-php artisan make:middleware CheckApiKey
-```
-This will create a new file in `app/Http/Middleware/CheckApiKey.php`.
-
----
-
-## 3. Registering and Applying Middleware
-
-There are several ways to register and apply middleware:
-
-### A. Global Middleware
-Middleware that runs on every single HTTP request to your application. You register them in the `$middleware` property of your `app/Http/Kernel.php` file.
-
-```php
-// app/Http/Kernel.php
-protected $middleware = [
-    // ...
-    \App\Http\Middleware\TrustProxies::class,
-    \Illuminate\Http\Middleware\HandleCors::class, // Laravel's built-in CORS middleware
-    \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
-    // ...
-];
+php artisan make:middleware EnsureApiKey
 ```
 
-### B. Route Middleware (Aliases)
-Middleware that can be assigned to specific routes or groups of routes. You first register an alias for them in the `$middlewareAliases` property of `app/Http/Kernel.php`.
-
 ```php
-// app/Http/Kernel.php
-protected $middlewareAliases = [
-    // ...
-    'auth' => \App\Http\Middleware\Authenticate::class,
-    'api.key.check' => \App\Http\Middleware\CheckApiKey::class, // Your custom middleware
-];
-```
-Then, you can apply them to routes:
-
-```php
-// routes/api.php
-Route::get('/secured-data', function () {
-    return response()->json(['data' => 'This is secured!']);
-})->middleware('api.key.check');
-```
-
-### C. Middleware Groups
-Laravel provides default middleware groups like `web` and `api`. The `api` group is defined in `app/Http/Kernel.php` and includes middleware specifically designed for APIs, such as `throttle` (rate limiting).
-
-You can add your custom middleware to an existing group or create new groups:
-
-```php
-// app/Http/Kernel.php
-protected $middlewareGroups = [
-    'api' => [
-        // ... Laravel's default API middleware
-        \Illuminate\Routing\Middleware\ThrottleRequests::class.':api', // Rate Limiting
-        \Illuminate\Routing\Middleware\SubstituteBindings::class,
-        \App\Http\Middleware\CheckApiKey::class, // Add your API Key check to the API group
-    ],
-];
-```
-Any route defined in `routes/api.php` automatically uses the `api` middleware group.
-
----
-
-## 4. Example: API Key Authentication Middleware
-
-Let's refine our `CheckApiKey` middleware:
-
-```php
-// app/Http/Middleware/CheckApiKey.php
-
+// app/Http/Middleware/EnsureApiKey.php
 namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-class CheckApiKey
+class EnsureApiKey
 {
-    /**
-     * Handle an incoming request.
-     *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
-     */
     public function handle(Request $request, Closure $next): Response
     {
-        $expectedApiKey = env('API_KEY'); // Store your API key securely in .env
-
-        if (!$request->hasHeader('X-API-KEY') || $request->header('X-API-KEY') !== $expectedApiKey) {
-            return response()->json(['message' => 'Unauthorized - Invalid API Key'], 401);
+        $apiKey = $request->header('X-API-KEY');
+        if ($apiKey !== config('services.api.key')) {
+            return response()->json(['message' => 'Invalid API key'], 401);
         }
 
         return $next($request);
     }
 }
 ```
-Remember to add `API_KEY=your_secret_key_here` to your `.env` file.
 
-Then, apply this middleware to the routes you want to protect.
+## 3. Attaching Middleware
 
----
-
-## 5. Terminable Middleware
-
-Sometimes, you might want to perform some operations *after* the HTTP response has been sent to the browser. For this, you can define a `terminate` method in your middleware.
+### Route Level
 
 ```php
-// app/Http/Middleware/LogApiRequest.php
+use Illuminate\Support\Facades\Route;
 
+Route::get('/me', fn () => auth()->user())
+    ->middleware(['auth:sanctum']);
+```
+
+### Group Level
+
+```php
+use App\Http\Controllers\AccountController;
+use Illuminate\Support\Facades\Route;
+
+Route::middleware(['auth:sanctum', 'verified'])->group(function () {
+    Route::get('/account', [AccountController::class, 'show']);
+});
+```
+
+## 4. Middleware Parameters
+
+Define parameters after a colon and parse them inside your middleware.
+
+```php
+// routes/api.php
+use App\Http\Controllers\AdminController;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/admin', [AdminController::class, 'index'])
+    ->middleware('role:admin');
+```
+
+```php
+// app/Http/Middleware/EnsureRole.php
 namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Illuminate\Support\Facades\Log;
 
-class LogApiRequest
+class EnsureRole
 {
-    public function handle(Request $request, Closure $next): Response
+    public function handle(Request $request, Closure $next, string $role): Response
     {
-        return $next($request);
-    }
+        if (! $request->user() || ! $request->user()->hasRole($role)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
-    public function terminate(Request $request, Response $response): void
-    {
-        // This code will execute after the response has been sent
-        Log::info('API Request Logged', [
-            'url' => $request->fullUrl(),
-            'method' => $request->method(),
-            'status' => $response->getStatusCode(),
-            'user_agent' => $request->header('User-Agent'),
-        ]);
+        return $next($request);
     }
 }
 ```
-Register terminable middleware as global or route middleware.
 
-Middleware is a powerful feature for enforcing policies, managing cross-cutting concerns, and keeping your controller logic clean.
+## 5. Middleware Order and Priority
+
+When middleware depend on each other, define priority order:
+
+```php
+// bootstrap/app.php
+$middleware->priority([
+    \Illuminate\Session\Middleware\StartSession::class,
+    \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+    \App\Http\Middleware\Authenticate::class,
+]);
+```
+
+In legacy apps, use `protected $middlewarePriority` in `app/Http/Kernel.php`.
+
+## 6. Rate Limiting Middleware
+
+Define rate limiters in a service provider:
+
+```php
+// app/Providers/AppServiceProvider.php
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
+
+public function boot(): void
+{
+    RateLimiter::for('api', function (Request $request) {
+        $userId = optional($request->user())->id;
+        return Limit::perMinute(120)->by($userId ?: $request->ip());
+    });
+}
+```
+
+Then attach `throttle:api` to routes or groups.
+
+## 7. Terminable Middleware
+
+For actions after the response is sent:
+
+```php
+namespace App\Http\Middleware;
+
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+class LogApiRequest
+{
+    public function terminate(Request $request, Response $response): void
+    {
+        activity()->withProperties([
+            'path' => $request->path(),
+            'status' => $response->getStatusCode(),
+        ])->log('api_request');
+    }
+}
+```
+
+## 8. Practical Middleware Patterns
+
+- **Request IDs**: generate and attach `X-Request-ID` for traceability.
+- **Tenant Resolution**: map subdomains or headers to tenants.
+- **ETag/Cache**: short‑circuit responses for read endpoints.
+- **Security**: enforce HTTPS and strict CORS in production.
+
+## Tips
+
+- Keep middleware small and focused.
+- Avoid heavy database queries in middleware.
+- Prefer middleware groups to avoid repetitive route chains.
+
+---
+
+[Previous: Requests and Validation](./10-requests-and-validation.md) | [Back to Index](./README.md) | [Next: Authentication with Sanctum ->](./12-authentication-sanctum.md)

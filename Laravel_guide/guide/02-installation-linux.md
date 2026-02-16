@@ -1,29 +1,41 @@
 # 02 - Installation on Linux (Ubuntu/Debian)
 
-This chapter sets up Laravel 12 on Ubuntu/Debian. It uses PHP 8.2+ and Composer.
+This chapter sets up a modern Laravel 12 environment on Linux with PHP 8.2+ and Composer.
+
+## Goals
+
+- Install PHP with required extensions
+- Install Composer and Node.js tooling
+- Create and run a Laravel project
 
 ## Prerequisites
 
 - A user with `sudo` privileges
 - Basic terminal knowledge
-
-## Step 1: Install PHP and Extensions
-
-Laravel 12 requires PHP 8.2 or higher. Install PHP and common extensions:
+- Git installed
 
 ```bash
 sudo apt-get update
+sudo apt-get install -y git curl unzip
+```
+
+## 1. Install PHP and Extensions
+
+Laravel needs PHP 8.2+ with common extensions:
+
+```bash
 sudo apt-get install -y \
   php8.3 php8.3-cli php8.3-fpm \
   php8.3-mysql php8.3-pgsql php8.3-sqlite3 \
-  php8.3-mbstring php8.3-xml php8.3-curl php8.3-zip php8.3-bcmath
+  php8.3-mbstring php8.3-xml php8.3-curl php8.3-zip php8.3-bcmath \
+  php8.3-intl php8.3-gd
 
 php --version
 ```
 
-If your distribution does not include PHP 8.3, use PHP 8.2 or add a trusted PPA.
+If your distro does not include PHP 8.3, use 8.2 or install from a trusted PPA.
 
-## Step 2: Install Composer
+## 2. Install Composer
 
 ```bash
 curl -sS https://getcomposer.org/installer -o /tmp/composer-setup.php
@@ -34,24 +46,49 @@ sudo php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=compose
 composer --version
 ```
 
-## Step 3: Install the Laravel Installer (Optional)
+## 3. Install Node.js (Recommended)
+
+Vite and frontend tooling require Node.js. Use `fnm` or `nvm` for version management.
 
 ```bash
-composer global require laravel/installer
+node --version
+npm --version
 ```
 
-Make sure Composer bin is on your PATH:
+## 4. Optional: Database via Docker
+
+If you do not want to install a local database, use Docker Compose.
+
+```yaml
+# docker-compose.yml
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: laravel
+    ports:
+      - "5432:5432"
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+```
+
+Start services:
 
 ```bash
-echo 'export PATH="$HOME/.config/composer/vendor/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
+docker compose up -d
 ```
 
-## Step 4: Create a Project
+## 5. Create a Project
 
 ### Option A: Laravel Installer
 
 ```bash
+composer global require laravel/installer
+export PATH="$HOME/.config/composer/vendor/bin:$PATH"
 laravel new my-laravel-api
 ```
 
@@ -61,7 +98,7 @@ laravel new my-laravel-api
 composer create-project laravel/laravel my-laravel-api
 ```
 
-## Step 5: Configure Environment
+## 6. Configure Environment
 
 ```bash
 cd my-laravel-api
@@ -69,21 +106,35 @@ cp .env.example .env
 php artisan key:generate
 ```
 
-Update `.env` with your database credentials.
+Update `.env` with database credentials:
 
-## Step 6: Run the App
+```
+DB_CONNECTION=pgsql
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_DATABASE=laravel
+DB_USERNAME=postgres
+DB_PASSWORD=postgres
+```
+
+## 7. Run Migrations and Start the App
 
 ```bash
+php artisan migrate
 php artisan serve
 ```
 
 Visit `http://127.0.0.1:8000`.
 
+## 8. Optional: Enable Xdebug (Local Only)
+
+Xdebug helps with debugging and code coverage. Install it only for local development.
+
 ## Tips
 
-- Use PostgreSQL or MySQL for production.
-- Use SQLite for quick local testing.
+- Prefer PostgreSQL for production reliability.
 - Keep PHP and Composer updated.
+- Use Docker services for parity with production.
 
 ---
 

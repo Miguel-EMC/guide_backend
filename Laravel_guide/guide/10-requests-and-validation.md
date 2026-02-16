@@ -1,10 +1,14 @@
 # 10 - Requests and Validation
 
-This chapter covers request handling and validation, including Form Requests and custom messages.
+This chapter covers request handling and validation, including Form Requests, custom rules, and advanced patterns for API backends.
 
-## Basic Request Access
+## Goals
 
-Inject `Illuminate\Http\Request` into a controller:
+- Validate at the boundary
+- Keep validation logic reusable
+- Return consistent error responses
+
+## 1. Accessing Request Data
 
 ```php
 use Illuminate\Http\Request;
@@ -12,13 +16,17 @@ use Illuminate\Http\Request;
 public function store(Request $request)
 {
     $name = $request->input('name');
-    $email = $request->input('email');
+    $email = $request->string('email');
+    $active = $request->boolean('is_active');
 }
 ```
 
-## Validating in the Controller
+## 2. Quick Validation in Controllers
 
 ```php
+use App\Models\User;
+use Illuminate\Http\Request;
+
 public function store(Request $request)
 {
     $data = $request->validate([
@@ -31,9 +39,7 @@ public function store(Request $request)
 }
 ```
 
-## Form Requests (Recommended)
-
-Create a Form Request:
+## 3. Form Requests (Recommended)
 
 ```bash
 php artisan make:request StoreUserRequest
@@ -66,12 +72,22 @@ class StoreUserRequest extends FormRequest
             'email.unique' => 'Email already exists.',
         ];
     }
+
+    public function attributes(): array
+    {
+        return [
+            'email' => 'email address',
+        ];
+    }
 }
 ```
 
-Use in controller:
+Use it in a controller:
 
 ```php
+use App\Http\Requests\StoreUserRequest;
+use App\Models\User;
+
 public function store(StoreUserRequest $request)
 {
     $data = $request->validated();
@@ -79,18 +95,64 @@ public function store(StoreUserRequest $request)
 }
 ```
 
-## Custom Attributes
+## 4. Preparing Input Before Validation
 
 ```php
-public function attributes(): array
+protected function prepareForValidation(): void
 {
-    return [
-        'email' => 'email address',
-    ];
+    $this->merge([
+        'email' => strtolower($this->input('email')),
+    ]);
 }
 ```
 
-## Conditional Validation
+## 5. After Validation Hook
+
+```php
+public function withValidator($validator): void
+{
+    $validator->after(function ($validator) {
+        if ($this->input('type') === 'pro' && ! $this->filled('company')) {
+            $validator->errors()->add('company', 'Company is required for pro accounts.');
+        }
+    });
+}
+```
+
+## 6. Nested and Array Validation
+
+```php
+$request->validate([
+    'items' => ['required', 'array', 'min:1'],
+    'items.*.sku' => ['required', 'string'],
+    'items.*.qty' => ['required', 'integer', 'min:1'],
+]);
+```
+
+## 7. Custom Rule Classes
+
+```bash
+php artisan make:rule StrongPassword
+```
+
+```php
+use Illuminate\Contracts\Validation\Rule;
+
+class StrongPassword implements Rule
+{
+    public function passes($attribute, $value): bool
+    {
+        return strlen($value) >= 12 && preg_match('/[A-Z]/', $value);
+    }
+
+    public function message(): string
+    {
+        return 'The :attribute must be at least 12 characters and include uppercase.';
+    }
+}
+```
+
+## 8. Conditional Validation
 
 ```php
 use Illuminate\Validation\Rule;
@@ -101,7 +163,7 @@ $request->validate([
 ]);
 ```
 
-## File Validation
+## 9. File Validation
 
 ```php
 $request->validate([
@@ -111,15 +173,33 @@ $request->validate([
 $path = $request->file('avatar')->store('avatars', 'public');
 ```
 
-## API Error Response Shape
+## 10. Manual Validator
 
-Laravel returns a `422 Unprocessable Entity` response with validation errors by default. Keep it consistent for clients.
+```php
+use Illuminate\Support\Facades\Validator;
+
+$validator = Validator::make($request->all(), [
+    'email' => ['required', 'email'],
+]);
+
+if ($validator->fails()) {
+    return response()->json(['errors' => $validator->errors()], 422);
+}
+```
+
+## 11. Safe Data Extraction
+
+Form Requests support safe data access:
+
+```php
+$data = $request->safe()->only(['name', 'email']);
+```
 
 ## Tips
 
-- Prefer Form Requests for complex validation.
-- Always validate IDs and foreign keys.
-- Use `validated()` to avoid mass assignment of untrusted fields.
+- Validate at the boundary, not inside services.
+- Use Form Requests for complex validation rules.
+- Keep error responses consistent and documented.
 
 ---
 

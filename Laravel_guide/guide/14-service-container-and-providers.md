@@ -1,153 +1,176 @@
 # 14 - The Service Container and Providers
 
-At the heart of Laravel's architecture lies a powerful tool: the **Service Container**. It's an Inversion of Control (IoC) container used to manage class dependencies and perform dependency injection. Understanding how the container works is a key step towards mastering Laravel and writing clean, decoupled, and testable code.
+Laravel's service container is an IoC container that resolves dependencies and keeps your code decoupled. Service providers are where you register bindings and boot application services.
 
----
+## Goals
 
-## 1. What is the Service Container?
+- Bind interfaces to implementations
+- Use contextual and scoped bindings
+- Build clean service providers
 
-Imagine you have a `PaymentController` that needs a `StripeService` to process payments. Instead of creating the `StripeService` inside the controller like this:
+## 1. Dependency Injection Basics
 
 ```php
-// Inefficient and tightly coupled
-class PaymentController extends Controller
-{
-    protected $paymentService;
+use App\Contracts\PaymentGateway;
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
 
-    public function __construct()
+class BillingController extends Controller
+{
+    public function __construct(private PaymentGateway $gateway) {}
+
+    public function charge(Request $request)
     {
-        // This is problematic! What if StripeService has its own dependencies?
-        $this->paymentService = new StripeService('api-key-123'); 
+        $this->gateway->charge(5000, $request->input('token'));
     }
 }
 ```
-You "invert the control" and let an external entity (the Service Container) "inject" the dependency for you:
+
+Laravel resolves `PaymentGateway` from the container.
+
+## 2. Binding Implementations
+
+### Transient (new instance every time)
 
 ```php
-// Decoupled and easy to test
-class PaymentController extends Controller
-{
-    protected $paymentService;
+use App\Contracts\PaymentGateway;
+use App\Services\StripeGateway;
 
-    // Laravel's service container will automatically create and inject the StripeService
-    public function __construct(StripeService $paymentService)
-    {
-        $this->paymentService = $paymentService;
-    }
-}
-```
-The Service Container is essentially a "box" where you can "bind" (register) classes and interfaces, and then "resolve" (get) them out of the box whenever you need them.
-
----
-
-## 2. Binding into the Container
-
-You typically register bindings within the `register()` method of a **Service Provider**.
-
-### `bind()` - Simple Bindings
-A `bind` binding will create a *new* instance of the class every time it is resolved from the container.
-
-```php
-// In app/Providers/AppServiceProvider.php
-use App\Services\StripeService;
-
-public function register(): void
-{
-    $this->app->bind(StripeService::class, function ($app) {
-        return new StripeService(config('services.stripe.secret'));
-    });
-}
+$this->app->bind(PaymentGateway::class, StripeGateway::class);
 ```
 
-### `singleton()` - Singleton Bindings
-A `singleton` binding will create an instance of the class *only the first time* it is resolved. On subsequent calls, it will return the same, shared instance. This is useful for database connections, configuration objects, etc.
+### Singleton (shared instance)
 
 ```php
-// In app/Providers/AppServiceProvider.php
-use App\Services\AnalyticsService;
+use App\Services\AnalyticsClient;
 
-public function register(): void
-{
-    $this->app->singleton(AnalyticsService::class, function ($app) {
-        return new AnalyticsService(config('services.analytics.key'));
-    });
-}
+$this->app->singleton(AnalyticsClient::class, function ($app) {
+    return new AnalyticsClient(config('services.analytics.key'));
+});
 ```
 
-### Binding Interfaces to Implementations
-This is one of the most powerful features. It allows you to code against an interface and easily swap out the implementation later without changing your controller or business logic.
+### Scoped (shared per request)
 
 ```php
-// app/Interfaces/PaymentGateway.php
-interface PaymentGateway {
-    public function charge(int $amount, string $token): bool;
-}
+use App\Tenancy\CurrentTenant;
 
-// app/Services/StripeGateway.php
-class StripeGateway implements PaymentGateway { /* ... */ }
-
-// app/Services/PayPalGateway.php
-class PayPalGateway implements PaymentGateway { /* ... */ }
+$this->app->scoped(CurrentTenant::class, function () {
+    return new CurrentTenant();
+});
 ```
 
-Now, bind the interface to a concrete implementation in a service provider:
+## 3. Contextual Binding
+
+Different implementations for different classes:
+
 ```php
-// In app/Providers/AppServiceProvider.php
-public function register(): void
-{
-    $this->app->singleton(PaymentGateway::class, StripeGateway::class);
-    // To switch to PayPal, you would just change this one line!
-    // $this->app->singleton(PaymentGateway::class, PayPalGateway::class);
-}
+use App\Contracts\PaymentGateway;
+use App\Services\AdminBillingService;
+use App\Services\PublicBillingService;
+use App\Services\StripeGateway;
+use App\Services\PayPalGateway;
+
+$this->app->when(AdminBillingService::class)
+    ->needs(PaymentGateway::class)
+    ->give(StripeGateway::class);
+
+$this->app->when(PublicBillingService::class)
+    ->needs(PaymentGateway::class)
+    ->give(PayPalGateway::class);
 ```
-Your controller can now type-hint the interface, and Laravel will inject the correct implementation:
+
+## 4. Tagging Bindings
+
 ```php
-// app/Http/Controllers/PaymentController.php
-class PaymentController extends Controller
-{
-    public function __construct(PaymentGateway $gateway) { /* ... */ }
-}
+use App\Services\PayPalGateway;
+use App\Services\StripeGateway;
+
+$this->app->tag([StripeGateway::class, PayPalGateway::class], 'gateways');
+
+$gateways = $this->app->tagged('gateways');
 ```
 
----
-
-## 3. Resolving from the Container
-
-### Automatic Resolution (Dependency Injection)
-As seen above, the most common way to resolve a dependency is to simply type-hint it in a constructor or method. Laravel's container automatically reads the type-hint and injects the appropriate object. This is called **Dependency Injection**.
-
-### Manual Resolution
-Sometimes, you may need to manually resolve something from the container. You can use the `app()` helper or the `App` facade.
+## 5. Extending Existing Bindings
 
 ```php
-// Using the app() helper
+use App\Logging\RequestIdProcessor;
+use Psr\Log\LoggerInterface;
+
+$this->app->extend(LoggerInterface::class, function ($logger) {
+    $logger->pushProcessor(new RequestIdProcessor());
+    return $logger;
+});
+```
+
+## 6. Resolving Services Manually
+
+```php
+use App\Contracts\PaymentGateway;
+
 $gateway = app(PaymentGateway::class);
-
-// Using the resolve() helper, which is identical to app()
 $gateway = resolve(PaymentGateway::class);
 ```
 
----
+Use manual resolution only when constructor injection is not possible.
 
-## 4. Service Providers
+## 7. Service Providers
 
-Service Providers are the central place to configure your application and register bindings with the service container. All service providers extend the `Illuminate\Support\ServiceProvider` class and contain two methods: `register()` and `boot()`.
+Create a provider:
 
--   **`register()` method**: Within this method, you should *only* bind things into the service container. You should never attempt to use any service that has already been registered.
--   **`boot()` method**: This method is called after all other service providers have been registered. This means you can access any other service that has been registered by the framework. You can use this method for things like registering event listeners or defining model observers.
-
-You can create a new service provider with Artisan:
 ```bash
-php artisan make:provider RepositoryServiceProvider
+php artisan make:provider BillingServiceProvider
 ```
-Then, you must register your new provider in the `providers` array in your `config/app.php` file.
 
 ```php
-// config/app.php
-'providers' => [
-    // ...
-    App\Providers\RepositoryServiceProvider::class,
-],
+namespace App\Providers;
+
+use App\Contracts\PaymentGateway;
+use App\Services\StripeGateway;
+use Illuminate\Support\ServiceProvider;
+
+class BillingServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        $this->app->singleton(PaymentGateway::class, StripeGateway::class);
+        $this->mergeConfigFrom(__DIR__.'/../../config/billing.php', 'billing');
+    }
+
+    public function boot(): void
+    {
+        $this->publishes([
+            __DIR__.'/../../config/billing.php' => config_path('billing.php'),
+        ], 'billing-config');
+    }
+}
 ```
 
-The Service Container is a fundamental concept that enables much of Laravel's magic, promoting a clean, decoupled architecture that is easy to maintain and test.
+## 8. Deferred Providers
+
+If a provider only registers container bindings, you can defer it:
+
+```php
+namespace App\Providers;
+
+use App\Contracts\PaymentGateway;
+use Illuminate\Contracts\Support\DeferrableProvider;
+use Illuminate\Support\ServiceProvider;
+
+class BillingServiceProvider extends ServiceProvider implements DeferrableProvider
+{
+    public function provides(): array
+    {
+        return [PaymentGateway::class];
+    }
+}
+```
+
+## Tips
+
+- Prefer constructor injection for clarity and testability.
+- Use interfaces for public contracts.
+- Keep `register()` free of side effects.
+
+---
+
+[Previous: API Resources](./13-api-resources.md) | [Back to Index](./README.md) | [Next: Error Handling and Logging ->](./15-error-handling-and-logging.md)

@@ -1,187 +1,137 @@
-# 26 - Full-Text Search with Laravel Scout
+# 26 - Full‑Text Search with Laravel Scout
 
-For many APIs, simple `WHERE column LIKE '%query%'` SQL queries are insufficient for providing a fast and relevant search experience. This is where **full-text search** comes in. Laravel provides an elegant solution for this with **Laravel Scout**.
+Laravel Scout adds full‑text search to Eloquent models with a clean, driver‑based API. It supports a built‑in database engine and external engines for more advanced search features.
 
----
+## Goals
 
-## 1. What is Laravel Scout?
+- Install and configure Scout
+- Make models searchable
+- Choose the right search engine
 
-Laravel Scout is a driver-based solution for adding full-text search to your Eloquent models. It automatically keeps your database records in sync with a search engine, making your models easily searchable.
-
-Instead of writing complex SQL full-text queries, you interact with a simple, fluent API provided by Scout.
-
-### Scout Drivers
-
-Scout supports various search drivers (search engines):
--   **Algolia**: A powerful, hosted search-as-a-service.
--   **Meilisearch**: A fast, open-source search engine that you can self-host.
--   **Database**: A simple driver that uses your database's built-in full-text capabilities (or basic `LIKE` statements if full-text isn't available/configured). Great for small projects or getting started.
--   **Collection**: For searching PHP collections.
-
-For this guide, we'll use the **Database** driver for simplicity, but the API remains largely the same across drivers.
-
----
-
-## 2. Installation and Configuration (Database Driver)
-
-### Step 1: Install Scout
+## 1. Install Scout
 
 ```bash
 composer require laravel/scout
+php artisan vendor:publish --provider="Laravel\\Scout\\ScoutServiceProvider"
 ```
 
-### Step 2: Publish Configuration
-
-Publish Scout's configuration file:
-```bash
-php artisan vendor:publish --provider="Laravel\Scout\ScoutServiceProvider"
-```
 This creates `config/scout.php`.
 
-### Step 3: Configure Database Driver
+## 2. Choose a Driver
 
-In your `.env` file, set the `SCOUT_DRIVER` to `database`:
-```
-# .env
+In `.env`:
+
+```env
 SCOUT_DRIVER=database
 ```
-And ensure your database connection is properly configured.
 
-### Step 4: Create Search Indexes Table
+Common options:
 
-If using the `database` driver, you need a table to store your search indexes.
-```bash
-php artisan vendor:publish --tag="scout-db-migrations"
-php artisan migrate
-```
-This will create a `scout_search_data` table.
+- `database` (built‑in, no external service)
+- `algolia`
+- `meilisearch`
+- `typesense`
+- `collection` (local/dev only)
 
----
-
-## 3. Making Models Searchable
-
-To make an Eloquent model searchable, you just need to add the `Searchable` trait to the model.
+## 3. Make a Model Searchable
 
 ```php
-// app/Models/Doctor.php
+namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Laravel\Scout\Searchable;
 use Illuminate\Database\Eloquent\Model;
-use Laravel\Scout\Searchable; // Import the trait
 
-class Doctor extends Model
+class Post extends Model
 {
-    use HasFactory, Searchable; // Use the trait
+    use Searchable;
 
-    /**
-     * Get the indexable data array for the model.
-     *
-     * @return array<string, mixed>
-     */
     public function toSearchableArray(): array
     {
-        // Define which attributes of the model should be indexed for searching.
         return [
-            'name' => $this->name,
-            'specialty' => $this->specialty,
-            // You can also include related data, e.g.,
-            // 'patients' => $this->patients->pluck('name')->implode(', '),
+            'id' => $this->id,
+            'title' => $this->title,
+            'body' => $this->body,
         ];
     }
 }
 ```
-The `toSearchableArray()` method defines the data that will be stored in your search index.
 
-### Custom Index Name (Optional)
-By default, Scout will use the model's table name as the search index name. You can customize this:
+## 4. Database Engine Tuning
+
+For the database engine you can optimize search behavior using attributes:
 
 ```php
-// app/Models/Doctor.php
-class Doctor extends Model
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Laravel\Scout\Attributes\SearchUsingFullText;
+use Laravel\Scout\Attributes\SearchUsingPrefix;
+use Laravel\Scout\Searchable;
+
+class Post extends Model
 {
     use Searchable;
 
-    public function searchableAs(): string
+    #[SearchUsingPrefix(['id', 'title'])]
+    #[SearchUsingFullText(['body'])]
+    public function toSearchableArray(): array
     {
-        return 'doctors_index'; // Custom index name
+        return [
+            'id' => $this->id,
+            'title' => $this->title,
+            'body' => $this->body,
+        ];
     }
 }
 ```
-
----
-
-## 4. Indexing Data
-
-### Initial Import
-To populate your search index with existing data, use the `scout:import` Artisan command:
-
-```bash
-php artisan scout:import "App\Models\Doctor"
-```
-
-### Automatic Syncing
-Once the `Searchable` trait is added to your model, Scout automatically keeps your search index in sync. Whenever you create, update, or delete a model instance, Scout will update the search index accordingly.
-
----
 
 ## 5. Searching
 
-Once your models are searchable, you can use the `search()` method to query your data.
-
 ```php
-// app/Http/Controllers/SearchController.php
+use App\Models\Post;
 
-use App\Models\Doctor;
-use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
-
-class SearchController extends Controller
-{
-    public function __invoke(Request $request): JsonResponse
-    {
-        $query = $request->input('q');
-
-        if (!$query) {
-            return response()->json(['message' => 'Please provide a search query.'], 400);
-        }
-
-        // Search for doctors by name or specialty
-        $doctors = Doctor::search($query)->get();
-
-        return response()->json($doctors);
-    }
-}
-```
-You would then map this controller to a route: `Route::get('/search/doctors', SearchController::class);`
-
-### Pagination
-You can paginate search results just like regular Eloquent queries:
-```php
-$doctors = Doctor::search('Cardiology')->paginate(10);
-return response()->json($doctors);
+$results = Post::search('laravel')->get();
+$paginated = Post::search('laravel')->paginate(15);
 ```
 
-### Advanced Searches
-You can add `where` clauses to your search queries:
-```php
-$doctors = Doctor::search('Alice')
-                 ->where('is_on_vacation', false)
-                 ->orderBy('name', 'asc')
-                 ->get();
+## 6. Import and Syncing
+
+Sync existing records:
+
+```bash
+php artisan scout:import "App\\Models\\Post"
 ```
+
+Pause syncing for bulk updates:
+
+```php
+use App\Models\Post;
+
+Post::withoutSyncingToSearch(function () {
+    Post::query()->update(['synced' => true]);
+});
+```
+
+## 7. Queueing Indexing
+
+Enable queueing in `config/scout.php` for non‑database engines:
+
+```php
+'queue' => true,
+```
+
+Then run a worker:
+
+```bash
+php artisan queue:work redis --queue=scout
+```
+
+## Tips
+
+- Use the database engine for simple search needs.
+- Use Algolia/Meilisearch/Typesense for typo tolerance and facets.
+- Keep searchable data small and intentional.
 
 ---
 
-## 6. Disabling Syncing
-
-Sometimes, you may want to prevent a model from being synced to the search index.
-
--   **Temporarily for a batch**:
-    ```php
-    Doctor::withoutSyncingToSearch(function () {
-        Doctor::find(1)->update(['name' => 'Dr. Temporarily Offline']);
-    });
-    ```
--   **Conditionally**: You can define a `shouldBeSearchable()` method on your model.
-
-Laravel Scout makes integrating powerful search capabilities into your API both simple and highly effective.
+[Previous: Caching Strategies](./25-caching-strategies.md) | [Back to Index](./README.md) | [Next: Laravel 12 Features ->](./27-laravel-12-features.md)
